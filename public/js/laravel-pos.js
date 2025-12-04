@@ -1,0 +1,631 @@
+/* =========================================
+   PART 1: THE BRIDGE (API Communication)
+   ========================================= */
+const posSystem = {
+    _headers: { 'Content-Type': 'application/json' },
+    
+    login: async (creds) => {
+        const res = await fetch('/api/login', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(creds) });
+        return res.ok ? await res.json() : null;
+    },
+
+    logout: async () => {
+        await fetch('/api/logout', { method: 'POST', headers: posSystem._headers });
+        return { success: true };
+    },
+
+    getMenu: async () => (await fetch('/api/menu')).json(),
+
+    saveOrder: async (data) => {
+        const res = await fetch('/api/order', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) });
+        return await res.json();
+    },
+
+    getDashboardStats: async () => (await fetch('/api/dashboard-stats')).json(),
+    getDailySales: async () => (await fetch('/api/daily-sales')).json(),
+    
+    // User Management
+    getUsers: async () => (await fetch('/api/users')).json(),
+    addUser: async (data) => (await fetch('/api/users/add', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    updateUser: async (data) => (await fetch('/api/users/update', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    deleteUser: async (data) => (await fetch('/api/users/delete', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+
+    // Reports
+    getHistory: async () => (await fetch('/api/history')).json(),
+    getLogs: async () => (await fetch('/api/logs')).json(),
+    getSalesByCategory: async () => (await fetch('/api/sales-category')).json(),
+    
+    // Categories
+    addCategory: async (data) => (await fetch('/api/categories/add', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    updateCategory: async (data) => (await fetch('/api/categories/update', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    deleteCategory: async (data) => (await fetch('/api/categories/delete', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+
+    // Products
+    addMenuItem: async (data) => (await fetch('/api/add-product', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    updateProduct: async (data) => (await fetch('/api/products/update', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    deleteProduct: async (data) => (await fetch('/api/products/delete', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+
+    printReceipt: async (data) => {
+        const win = window.open('', '', 'width=400,height=600');
+        let itemsHtml = data.items.map(i => `<tr><td>${i.name || i.product_name}</td><td>${i.quantity}</td><td style="text-align:right">${parseFloat(i.price || i.price_at_sale).toFixed(2)}</td></tr>`).join('');
+        win.document.write(`<html><body style="font-family:monospace"><h3>RECEIPT</h3><p>Ref: ${data.referenceNumber}</p><hr><table>${itemsHtml}</table><hr><p>Total: ${data.totalCost}</p><script>window.print();setTimeout(()=>window.close(),500);</script></body></html>`);
+        win.document.close();
+    }
+};
+window.posSystem = posSystem;
+
+/* =========================================
+   PART 2: APP LOGIC & UI HANDLERS
+   ========================================= */
+document.addEventListener('DOMContentLoaded', () => {
+    let currentUser = null;
+    let cart = [];
+    let menus = {};
+    let fullMenuData = {}; // Stores original data for search
+
+    // DOM Elements
+    const dom = {
+        loginView: document.getElementById('login-view'),
+        mainApp: document.getElementById('main-app'),
+        cashierView: document.getElementById('cashier-view'),
+        dashboardView: document.getElementById('dashboard-view'),
+        loginUser: document.getElementById('login-user'),
+        loginPass: document.getElementById('login-pass'),
+        loginBtn: document.getElementById('login-btn'),
+        sidebarNav: document.getElementById('sidebar-nav'),
+        adminContent: document.getElementById('admin-content'),
+        userModal: document.getElementById('user-modal'),
+        headerUser: document.getElementById('header-username'),
+        sidebarToggle: document.getElementById('sidebar-toggle'),
+        logoutBtn: document.getElementById('global-logout-btn'),
+        
+        // Product Modals
+        productModal: document.getElementById('product-modal'),
+        categoryModal: document.getElementById('category-modal')
+    };
+
+    // --- PERSISTENCE ---
+    const savedUser = localStorage.getItem('pos_user');
+    if (savedUser) {
+        try {
+            currentUser = JSON.parse(savedUser);
+            startSession();
+        } catch (e) { localStorage.removeItem('pos_user'); }
+    }
+
+    // --- LOGIN/LOGOUT ---
+    if(dom.loginBtn) {
+        dom.loginBtn.onclick = async () => {
+            const username = dom.loginUser.value.trim();
+            const password = dom.loginPass.value.trim();
+            if(!username || !password) return alert("Please enter credentials");
+
+            const user = await window.posSystem.login({ username, password });
+            if (user) {
+                currentUser = user;
+                localStorage.setItem('pos_user', JSON.stringify(user));
+                startSession();
+            } else {
+                alert("Invalid Credentials");
+            }
+        };
+    }
+
+    if(dom.logoutBtn) {
+        dom.logoutBtn.onclick = async () => {
+            await window.posSystem.logout();
+            localStorage.removeItem('pos_user');
+            window.location.reload();
+        };
+    }
+
+    function startSession() {
+        dom.loginView.style.display = 'none';
+        dom.mainApp.style.display = 'block';
+        dom.headerUser.textContent = `${currentUser.first_name} (${currentUser.role})`;
+
+        if (currentUser.role === 'cashier') {
+            if(dom.sidebarToggle) dom.sidebarToggle.style.display = 'none';
+            loadCashierInterface();
+        } else {
+            if(dom.sidebarToggle) dom.sidebarToggle.style.display = 'block';
+            loadDashboardInterface();
+        }
+    }
+
+    // --- CASHIER INTERFACE ---
+    async function loadCashierInterface() {
+        dom.cashierView.classList.add('active-view');
+        dom.dashboardView.classList.remove('active-view');
+        menus = await window.posSystem.getMenu();
+        renderShop();
+    }
+
+    function renderShop() {
+        const catContainer = document.getElementById('shop-categories');
+        const grid = document.getElementById('shop-grid');
+        if(catContainer) catContainer.innerHTML = ''; 
+        if(grid) grid.innerHTML = '';
+
+        Object.keys(menus).forEach(cat => {
+            const btn = document.createElement('button');
+            btn.textContent = cat;
+            btn.onclick = () => renderProducts(cat);
+            if(catContainer) catContainer.appendChild(btn);
+        });
+
+        if(Object.keys(menus).length > 0) renderProducts(Object.keys(menus)[0]);
+    }
+
+    function renderProducts(cat) {
+        const grid = document.getElementById('shop-grid');
+        if(grid) grid.innerHTML = '';
+        if(menus[cat]) {
+            menus[cat].forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'product-card';
+                div.innerHTML = `<div class="p-info"><strong>${item.name}</strong><br>Php ${item.price}</div>`;
+                div.onclick = () => addToCart(item);
+                if(grid) grid.appendChild(div);
+            });
+        }
+    }
+
+    function addToCart(item) {
+        const exist = cart.find(c => c.name === item.name);
+        if(exist) exist.quantity++; else cart.push({...item, quantity: 1});
+        updateCartUI();
+    }
+
+    function updateCartUI() {
+        const list = document.getElementById('shop-cart-list');
+        if(list) list.innerHTML = '';
+        let total = 0;
+        cart.forEach((c, i) => {
+            total += c.price * c.quantity;
+            if(list) list.innerHTML += `<div class="cart-item" onclick="removeFromCart(${i})">${c.name} x${c.quantity} <span style="float:right">${(c.price * c.quantity).toFixed(2)}</span></div>`;
+        });
+        const totalEl = document.getElementById('shop-total');
+        if(totalEl) totalEl.textContent = total.toFixed(2);
+    }
+
+    window.removeFromCart = (i) => { cart.splice(i, 1); updateCartUI(); };
+
+    const payBtn = document.getElementById('shop-pay-btn');
+    if(payBtn) {
+        payBtn.onclick = async () => {
+            const cash = parseFloat(document.getElementById('shop-cash').value);
+            const total = parseFloat(document.getElementById('shop-total').textContent);
+            if(cart.length === 0 || isNaN(cash) || cash < total) return alert("Invalid Order");
+
+            const data = { referenceNumber: `TX-${Date.now()}`, totalCost: total, cashPaid: cash, change: cash-total, items: cart, cashier: currentUser.username };
+            await window.posSystem.saveOrder(data);
+            await window.posSystem.printReceipt(data);
+            cart = []; updateCartUI(); document.getElementById('shop-cash').value = '';
+            alert("Paid & Printed");
+        };
+    }
+
+    // --- DASHBOARD (ADMIN/MANAGER/SECURITY) ---
+    function loadDashboardInterface() {
+        if(dom.cashierView) dom.cashierView.classList.remove('active-view');
+        if(dom.dashboardView) dom.dashboardView.classList.add('active-view');
+        renderSidebar();
+        renderDashboardPage('dashboard');
+    }
+
+    function renderSidebar() {
+        if(!dom.sidebarNav) return;
+        dom.sidebarNav.innerHTML = '';
+        const role = currentUser.role;
+
+        const menuItems = [
+            { id: 'dashboard', label: 'Dashboard', icon: 'fa-chart-line', roles: ['admin', 'manager', 'security'] },
+            { id: 'manage_products', label: 'Manage Products', icon: 'fa-box', roles: ['admin', 'manager'] },
+            { id: 'manage_users', label: 'Manage Admins/Users', icon: 'fa-users-cog', roles: ['admin', 'security'] },
+            { id: 'sales_report', label: 'Sales Report', icon: 'fa-file-invoice-dollar', roles: ['admin', 'manager'] },
+            { id: 'order_history', label: 'Order History', icon: 'fa-history', roles: ['admin'] },
+            { id: 'sales_category', label: 'Sales by Category', icon: 'fa-chart-pie', roles: ['admin'] },
+            { id: 'online_accounts', label: 'Online Accounts', icon: 'fa-globe', roles: ['admin'] },
+            { id: 'audit_logs', label: 'Audit Logs', icon: 'fa-clipboard-list', roles: ['admin'] },
+            { id: 'transaction_history', label: 'Transaction History', icon: 'fa-receipt', roles: ['admin'] }
+        ];
+
+        menuItems.forEach(item => {
+            if(item.roles.includes(role)) {
+                const btn = document.createElement('button');
+                btn.innerHTML = `<i class="fas ${item.icon}"></i> <span>${item.label}</span>`;
+                btn.onclick = () => {
+                    dom.sidebarNav.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderDashboardPage(item.id);
+                };
+                dom.sidebarNav.appendChild(btn);
+            }
+        });
+    }
+
+    async function renderDashboardPage(pageId) {
+        if(!dom.adminContent) return;
+        
+        try {
+            if(pageId === 'dashboard') {
+                dom.adminContent.innerHTML = 'Loading...';
+                const stats = await window.posSystem.getDashboardStats();
+                const salesData = await window.posSystem.getDailySales();
+                
+                dom.adminContent.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                        <h2>Dashboard</h2>
+                        <button class="btn btn-primary" onclick="window.location.reload()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:20px; margin-bottom:30px;">
+                        <div style="padding:20px; background:white; border-radius:12px; border-left: 5px solid #FF3B5C; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                            <h3>Total Revenue</h3><p style="font-size:24px; font-weight:bold;">Php ${parseFloat(stats.todayRevenue).toFixed(2)}</p>
+                        </div>
+                        <div style="padding:20px; background:white; border-radius:12px; border-left: 5px solid #00C853; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                            <h3>Total Orders</h3><p style="font-size:24px; font-weight:bold;">${stats.todayOrders}</p>
+                        </div>
+                        <div style="padding:20px; background:white; border-radius:12px; border-left: 5px solid orange; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                            <h3>Total Users</h3><p style="font-size:24px; font-weight:bold;">${stats.userCount}</p>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:20px;">
+                        <div style="background:#fff; padding:20px; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                            <h3>Weekly Sales Chart</h3>
+                            <div id="revenue-chart-bars" style="display:flex; align-items:flex-end; justify-content:space-around; height:200px; margin-top:20px; border-bottom:1px solid #eee;"></div>
+                        </div>
+                        
+                        <div style="background:#fff; padding:20px; border-radius:12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                            <h3>Quick Actions</h3>
+                            <div style="display:flex; flex-direction:column; gap:10px; margin-top:20px;">
+                                <button class="btn" style="text-align:left; background:#f8f9fa; border:1px solid #eee;" onclick="handleQuickAction('manage_users')">
+                                    <i class="fas fa-user-shield" style="color:#FF3B5C; margin-right:10px;"></i> Manage Admins
+                                </button>
+                                <button class="btn" style="text-align:left; background:#f8f9fa; border:1px solid #eee;" onclick="handleQuickAction('manage_products')">
+                                    <i class="fas fa-box" style="color:#00C853; margin-right:10px;"></i> Add New Product
+                                </button>
+                                <button class="btn" style="text-align:left; background:#f8f9fa; border:1px solid #eee;" onclick="handleQuickAction('sales_report')">
+                                    <i class="fas fa-chart-pie" style="color:orange; margin-right:10px;"></i> View Sales Report
+                                </button>
+                            </div>
+                        </div>
+                    </div>`;
+                
+                renderChart(salesData);
+
+            } else if (pageId === 'manage_products') {
+                dom.adminContent.innerHTML = 'Loading...';
+                fullMenuData = await window.posSystem.getMenu();
+                renderManageProducts(fullMenuData);
+            
+            } else if(pageId === 'manage_users') {
+                dom.adminContent.innerHTML = 'Loading...';
+                const users = await window.posSystem.getUsers();
+                let html = `
+                    <div style="display:flex; justify-content:space-between"><h2>Manage Users</h2><button class="btn btn-primary" onclick="openUserModal()">+ Add User</button></div>
+                    <table style="width:100%; margin-top:20px;"><tr><th>Username</th><th>Role</th><th>Actions</th></tr>`;
+                users.forEach(u => {
+                    html += `<tr><td>${u.username}</td><td>${u.role}</td>
+                    <td><button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'>Edit</button> <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})">Delete</button></td></tr>`;
+                });
+                dom.adminContent.innerHTML = html + '</table>';
+
+            } else if (pageId === 'sales_category') {
+                const sales = await window.posSystem.getSalesByCategory();
+                dom.adminContent.innerHTML = `<h2>Sales by Category</h2><ul>` + sales.map(s => `<li>${s.category}: <strong>Php ${s.total_sales}</strong></li>`).join('') + `</ul>`;
+            
+            } else if (pageId === 'online_accounts') {
+                const users = await window.posSystem.getUsers();
+                let html = `<h2>Online Accounts</h2><table style="width:100%; margin-top:20px;"><tr><th>Username</th><th>Role</th><th>Status</th></tr>`;
+                users.forEach(u => html += `<tr><td>${u.username}</td><td>${u.role}</td><td style="color:green; font-weight:bold;">Online</td></tr>`);
+                dom.adminContent.innerHTML = html + '</table>';
+            
+            } else if (pageId === 'audit_logs') {
+                const logs = await window.posSystem.getLogs();
+                dom.adminContent.innerHTML = `<h2>Audit Logs</h2><ul>` + logs.map(l => `<li><strong>${l.username}</strong>: ${l.action} <small>(${l.created_at})</small></li>`).join('') + `</ul>`;
+            
+            } else if (pageId === 'order_history' || pageId === 'transaction_history') {
+                const hist = await window.posSystem.getHistory();
+                let html = `<h2>${pageId === 'order_history' ? 'Order History' : 'Transaction History'}</h2><table style="width:100%; margin-top:20px;"><tr><th>Ref #</th><th>Amount</th><th>Type</th><th>Time</th></tr>`;
+                hist.forEach(h => {
+                    html += `<tr><td>${h.reference_number}</td><td>Php ${h.total_cost}</td><td>${h.order_status}</td><td>${h.created_at}</td></tr>`;
+                });
+                dom.adminContent.innerHTML = html + '</table>';
+
+            } else {
+                 dom.adminContent.innerHTML = `<h2>${pageId}</h2><p>Feature under construction</p>`;
+            }
+
+        } catch (e) {
+            console.error(e);
+            dom.adminContent.innerHTML = '<p>Error loading content</p>';
+        }
+    }
+
+    function renderChart(data) {
+        const container = document.getElementById('revenue-chart-bars');
+        if(!container) return;
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const today = new Date();
+        let html = '';
+        for(let i=6; i>=0; i--) {
+            const d = new Date(); d.setDate(today.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            const record = data.find(r => r.date === dateStr);
+            const value = record ? parseFloat(record.total) : 0;
+            const height = value > 0 ? (value / 500) * 150 : 2; 
+            html += `<div style="text-align:center; width:100%;"><div style="height:${Math.min(height, 150)}px; width:30px; background:${value > 0 ? '#FF3B5C' : '#eee'}; margin:0 auto;" title="Php ${value}"></div><small>${days[d.getDay()]}</small></div>`;
+        }
+        container.innerHTML = html;
+    }
+
+    // --- QUICK ACTION HANDLER ---
+    window.handleQuickAction = (action) => {
+        const mapping = {
+            'manage_users': 'Manage Admins/Users',
+            'manage_products': 'Manage Products',
+            'sales_report': 'Sales Report'
+        };
+        const targetLabel = mapping[action];
+        const btn = Array.from(dom.sidebarNav.querySelectorAll('button')).find(b => b.innerText.includes(targetLabel));
+        
+        if(btn) {
+            btn.click();
+        } else {
+            alert("You do not have permission to access this feature.");
+        }
+    };
+
+    // --- MANAGE PRODUCTS IMPLEMENTATION ---
+    function renderManageProducts(menuData) {
+        let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2>Manage Products</h2>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="prod-search" placeholder="Search..." class="shop-input" onkeyup="searchProducts()">
+                    <button class="btn btn-primary" onclick="openCategoryModal()">+ Add Category</button>
+                </div>
+            </div>
+            <div id="prod-list-container">
+        `;
+        
+        Object.keys(menuData).forEach(catName => {
+            const products = menuData[catName];
+            // Safe fallback if products array is empty or malformed
+            const catId = (products && products.length > 0) ? products[0].category_id : null; 
+
+            html += `
+                <details open style="margin-bottom:15px; border:1px solid #ddd; border-radius:8px; padding:10px; background:#fff;">
+                    <summary style="cursor:pointer; font-weight:bold; font-size:1.1rem; padding-bottom:10px;">
+                        ${catName}
+                        <div style="float:right; display:inline-block;">
+                            <button class="btn btn-sm btn-success" onclick='openProductModal(null, "${catName}")'>+ Add Item</button>
+                            ${catId ? `<button class="btn btn-sm btn-secondary" onclick='openCategoryModal(${catId}, "${catName}")'>Edit Cat</button>` : ''}
+                            ${catId ? `<button class="btn btn-sm btn-danger" onclick='deleteCategory(${catId})'>Del Cat</button>` : ''}
+                        </div>
+                    </summary>
+                    <table style="width:100%; margin-top:5px; border-collapse:collapse;">
+                        ${(!products || products.length === 0) ? '<tr><td colspan="3">No items</td></tr>' : ''}
+            `;
+            
+            if(products) {
+                products.forEach(p => {
+                    html += `
+                        <tr style="border-top:1px solid #eee;">
+                            <td style="padding:8px;">${p.name}</td>
+                            <td style="padding:8px;">Php ${parseFloat(p.price).toFixed(2)}</td>
+                            <td style="text-align:right; padding:8px;">
+                                <button class="btn btn-sm btn-secondary" onclick='openProductModal(${JSON.stringify(p)}, "${catName}")'>Edit</button>
+                                <button class="btn btn-sm btn-danger" onclick='deleteProduct(${p.id})'>Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            html += `</table></details>`;
+        });
+        
+        html += `</div>`;
+        dom.adminContent.innerHTML = html;
+    }
+
+    window.searchProducts = () => {
+        const query = document.getElementById('prod-search').value.toLowerCase();
+        const filteredData = {};
+        
+        Object.keys(fullMenuData).forEach(cat => {
+            const catMatch = cat.toLowerCase().includes(query);
+            const itemsMatch = fullMenuData[cat].filter(p => 
+                p.name.toLowerCase().includes(query) || 
+                p.price.toString().includes(query)
+            );
+            
+            if (catMatch || itemsMatch.length > 0) {
+                filteredData[cat] = catMatch ? fullMenuData[cat] : itemsMatch;
+            }
+        });
+        
+        // Re-render just the list content manually
+        const container = document.getElementById('prod-list-container');
+        if(container) {
+            let html = '';
+            Object.keys(filteredData).forEach(catName => {
+                const products = filteredData[catName];
+                const catId = (products && products.length > 0) ? products[0].category_id : null; 
+                html += `
+                    <details open style="margin-bottom:15px; border:1px solid #ddd; border-radius:8px; padding:10px; background:#fff;">
+                        <summary style="cursor:pointer; font-weight:bold; font-size:1.1rem; padding-bottom:10px;">
+                            ${catName}
+                            <div style="float:right; display:inline-block;">
+                                <button class="btn btn-sm btn-success" onclick='openProductModal(null, "${catName}")'>+ Add Item</button>
+                                ${catId ? `<button class="btn btn-sm btn-secondary" onclick='openCategoryModal(${catId}, "${catName}")'>Edit Cat</button>` : ''}
+                                ${catId ? `<button class="btn btn-sm btn-danger" onclick='deleteCategory(${catId})'>Del Cat</button>` : ''}
+                            </div>
+                        </summary>
+                        <table style="width:100%; margin-top:5px;">
+                            ${(!products || products.length === 0) ? '<tr><td colspan="3">No items</td></tr>' : ''}
+                `;
+                if(products) {
+                    products.forEach(p => {
+                        html += `
+                            <tr style="border-top:1px solid #eee;">
+                                <td style="padding:8px;">${p.name}</td>
+                                <td style="padding:8px;">Php ${parseFloat(p.price).toFixed(2)}</td>
+                                <td style="text-align:right; padding:8px;">
+                                    <button class="btn btn-sm btn-secondary" onclick='openProductModal(${JSON.stringify(p)}, "${catName}")'>Edit</button>
+                                    <button class="btn btn-sm btn-danger" onclick='deleteProduct(${p.id})'>Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                }
+                html += `</table></details>`;
+            });
+            container.innerHTML = html;
+        }
+    };
+
+    // --- CATEGORY MODAL HANDLERS ---
+    window.openCategoryModal = (id = null, name = "") => {
+        if(!dom.categoryModal) return;
+        
+        const title = dom.categoryModal.querySelector('h3');
+        const input = document.getElementById('cat-name-input');
+        const saveBtn = document.getElementById('cat-save-btn');
+        
+        if(title) title.textContent = id ? "Edit Category" : "Add New Category";
+        if(input) input.value = name;
+        
+        saveBtn.onclick = async () => {
+            const newName = input.value.trim();
+            if(!newName) return alert("Name required");
+            
+            if(id) {
+                await window.posSystem.updateCategory({ id, name: newName });
+            } else {
+                await window.posSystem.addCategory({ name: newName });
+            }
+            alert("Category Saved");
+            dom.categoryModal.style.display = 'none';
+            renderDashboardPage('manage_products');
+        };
+        
+        dom.categoryModal.style.display = 'flex';
+    };
+
+    window.deleteCategory = async (id) => {
+        if(confirm("Delete this category and ALL its products?")) {
+            await window.posSystem.deleteCategory({id});
+            renderDashboardPage('manage_products');
+        }
+    };
+
+    // --- PRODUCT MODAL HANDLERS ---
+    window.openProductModal = (product = null, catName = "") => {
+        if(!dom.productModal) return;
+        
+        const title = document.getElementById('prod-modal-title');
+        const nameInput = document.getElementById('prod-name');
+        const priceInput = document.getElementById('prod-price');
+        const saveBtn = document.getElementById('prod-save-btn');
+        const hiddenCat = document.getElementById('prod-cat-hidden');
+        
+        if(title) title.textContent = product ? "Edit Product" : "Add Product to " + catName;
+        if(nameInput) nameInput.value = product ? product.name : "";
+        if(priceInput) priceInput.value = product ? product.price : "";
+        if(hiddenCat) hiddenCat.value = catName;
+        
+        saveBtn.onclick = async () => {
+            const name = nameInput.value.trim();
+            const price = priceInput.value;
+            
+            if(!name || !price) return alert("Invalid inputs");
+            
+            if (product) {
+                await window.posSystem.updateProduct({ id: product.id, name, price });
+            } else {
+                await window.posSystem.addMenuItem({ category: catName, name, price });
+            }
+            alert("Product Saved");
+            dom.productModal.style.display = 'none';
+            renderDashboardPage('manage_products');
+        };
+        
+        dom.productModal.style.display = 'flex';
+    };
+
+    window.closeProductModal = () => { if(dom.productModal) dom.productModal.style.display = 'none'; };
+    window.closeCategoryModal = () => { if(dom.categoryModal) dom.categoryModal.style.display = 'none'; };
+
+    window.deleteProduct = async (id) => {
+        if(confirm("Delete this product?")) {
+            await window.posSystem.deleteProduct({id});
+            renderDashboardPage('manage_products');
+        }
+    };
+
+    // --- USER MODAL HANDLERS ---
+    window.openUserModal = () => { if(dom.userModal) dom.userModal.style.display = 'flex'; };
+    window.closeUserModal = () => { if(dom.userModal) dom.userModal.style.display = 'none'; };
+    
+    window.editUser = (u) => {
+        openUserModal();
+        document.getElementById('user-username').value = u.username;
+        document.getElementById('user-fname').value = u.first_name;
+        document.getElementById('user-lname').value = u.last_name;
+        document.getElementById('user-role').value = u.role;
+        document.getElementById('user-pass').value = '';
+        
+        document.getElementById('user-save-btn').onclick = async () => {
+            const data = {
+                id: u.id,
+                username: document.getElementById('user-username').value,
+                password: document.getElementById('user-pass').value,
+                firstName: document.getElementById('user-fname').value,
+                lastName: document.getElementById('user-lname').value,
+                role: document.getElementById('user-role').value
+            };
+            await window.posSystem.updateUser(data);
+            alert("User Updated");
+            closeUserModal();
+            renderDashboardPage('manage_users');
+        };
+    };
+    
+    // Default Add User Handler
+    const defaultUserSave = async () => {
+        const data = {
+            username: document.getElementById('user-username').value,
+            password: document.getElementById('user-pass').value,
+            firstName: document.getElementById('user-fname').value,
+            lastName: document.getElementById('user-lname').value,
+            role: document.getElementById('user-role').value
+        };
+        await window.posSystem.addUser(data);
+        alert("User Saved");
+        closeUserModal();
+        renderDashboardPage('manage_users'); 
+    };
+    
+    // Bind Add User button to reset modal state
+    const oldOpenUserModal = window.openUserModal;
+    window.openUserModal = () => {
+        oldOpenUserModal();
+        document.getElementById('user-username').value = '';
+        document.getElementById('user-fname').value = '';
+        document.getElementById('user-lname').value = '';
+        document.getElementById('user-pass').value = '';
+        document.getElementById('user-save-btn').onclick = defaultUserSave;
+    };
+
+    window.delUser = async (id) => {
+        if(confirm("Delete user?")) {
+            await window.posSystem.deleteUser({id});
+            renderDashboardPage('manage_users');
+        }
+    };
+});
