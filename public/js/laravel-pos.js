@@ -385,10 +385,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderDashboardPage('sales_report');
             
             } else if (pageId === 'online_accounts') {
-                const users = await window.posSystem.getUsers();
-                let html = `<h2>Online Accounts</h2><table style="width:100%; margin-top:20px;"><tr><th>Username</th><th>Role</th><th>Status</th></tr>`;
-                users.forEach(u => html += `<tr><td>${u.username}</td><td>${u.role}</td><td style="color:green; font-weight:bold;">Online</td></tr>`);
-                dom.adminContent.innerHTML = html + '</table>';
+                dom.adminContent.innerHTML = 'Loading...';
+                fullUserData = await window.posSystem.getUsers();
+                renderAccountsTable(fullUserData, "Online Accounts");
             
             } else if (pageId === 'audit_logs') {
                 const logs = await window.posSystem.getLogs();
@@ -491,6 +490,65 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.adminContent.innerHTML = html;
     }
 
+    // --- ONLINE ACCOUNTS IMPLEMENTATION (DESIGN MATCH) ---
+    function renderAccountsTable(users, title = "Online Accounts") {
+        // Count based on DB status
+        const adminCount = users.filter(u => u.role === 'admin').length;
+        
+        let uHtml = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="font-weight:bold; font-size:1.8rem;">${title}</h2>
+                <button class="btn btn-primary" onclick="openUserModal()">+ Add New Account</button>
+            </div>
+            
+            <div style="display:flex; align-items:center; gap:15px; margin-bottom:25px;">
+                <div style="background:white; padding:10px 20px; border-radius:8px; border-left:5px solid var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.05); font-weight:bold;">
+                    Total Admins: ${adminCount}
+                </div>
+                <input type="text" id="user-search" placeholder="Search accounts..." class="shop-input" style="width:300px; margin:0; border-radius:6px;" onkeyup="searchUsers()">
+            </div>
+            
+            <table id="accounts-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden;">
+                <thead>
+                    <tr style="background:#f9f9f9; border-bottom:1px solid #eee; color:#444;">
+                        <th style="padding:15px; text-align:left; font-weight:bold;">First Name</th>
+                        <th style="padding:15px; text-align:left; font-weight:bold;">Last Name</th>
+                        <th style="padding:15px; text-align:left; font-weight:bold;">Username</th>
+                        <th style="padding:15px; text-align:left; font-weight:bold;">Role</th>
+                        <th style="padding:15px; text-align:left; font-weight:bold;">Status</th>
+                        <th style="padding:15px; text-align:right; font-weight:bold;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        if (users.length === 0) {
+            uHtml += `<tr><td colspan="6" style="padding:20px; color:#777;">No users found.</td></tr>`;
+        } else {
+            users.forEach(u => {
+                const isOnline = u.db_status === 'online';
+                const statusHtml = isOnline 
+                    ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
+                    : '<span style="color:gray;">Offline</span>';
+
+                uHtml += `
+                <tr style="border-bottom:1px solid #f0f0f0;">
+                    <td style="padding:15px;">${u.first_name || '-'}</td>
+                    <td style="padding:15px;">${u.last_name || '-'}</td>
+                    <td style="padding:15px;">${u.username}</td>
+                    <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
+                    <td style="padding:15px;">${statusHtml}</td>
+                    <td style="padding:15px; text-align:right;">
+                        <button class="btn btn-secondary btn-small" onclick='editUser(${JSON.stringify(u)})' style="margin-right:5px;"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-danger btn-small" onclick="delUser(${u.id})"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+        }
+        uHtml += `</tbody></table>`;
+        dom.adminContent.innerHTML = uHtml;
+    }
+
     window.searchUsers = () => {
         const query = document.getElementById('user-search').value.toLowerCase();
         const filteredUsers = fullUserData.filter(u => 
@@ -500,8 +558,12 @@ document.addEventListener('DOMContentLoaded', () => {
             u.role.toLowerCase().includes(query)
         );
         
-        const tbody = document.getElementById('user-list-body');
-        if(tbody) {
+        // --- Determine which table to update (Manage Users vs Online Accounts) ---
+        const manageTable = document.getElementById('user-list-body');
+        const onlineTable = document.getElementById('accounts-table');
+
+        if(manageTable) {
+            // Logic for Manage Users (Older simple table)
             let html = '';
             if(filteredUsers.length === 0) {
                 html = `<tr><td colspan="5" style="padding:20px; text-align:center; color:#777;">No users found.</td></tr>`;
@@ -520,7 +582,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     </tr>`;
                 });
             }
-            tbody.innerHTML = html;
+            manageTable.innerHTML = html;
+        } 
+        else if (onlineTable) {
+            // Logic for Online Accounts (New design)
+            const tbody = onlineTable.querySelector('tbody');
+            if(tbody) {
+                let html = '';
+                if(filteredUsers.length === 0) {
+                    html = `<tr><td colspan="6" style="padding:20px; color:#777;">No users found.</td></tr>`;
+                } else {
+                    filteredUsers.forEach(u => {
+                        const isOnline = u.db_status === 'online';
+                        const statusHtml = isOnline 
+                            ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
+                            : '<span style="color:gray;">Offline</span>';
+
+                        html += `
+                        <tr style="border-bottom:1px solid #f0f0f0;">
+                            <td style="padding:15px;">${u.first_name || '-'}</td>
+                            <td style="padding:15px;">${u.last_name || '-'}</td>
+                            <td style="padding:15px;">${u.username}</td>
+                            <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
+                            <td style="padding:15px;">${statusHtml}</td>
+                            <td style="padding:15px; text-align:right;">
+                                <button class="btn btn-secondary btn-small" onclick='editUser(${JSON.stringify(u)})' style="margin-right:5px;"><i class="fas fa-edit"></i></button>
+                                <button class="btn btn-danger btn-small" onclick="delUser(${u.id})"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>`;
+                    });
+                }
+                tbody.innerHTML = html;
+            }
         }
     };
 
