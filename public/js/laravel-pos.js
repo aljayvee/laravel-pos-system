@@ -124,6 +124,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.logoutBtn.onclick = async () => {
             await window.posSystem.logout();
             localStorage.removeItem('pos_user');
+            // Explicitly clear currentUser so UI logic knows we are logged out
+            currentUser = null; 
             window.location.reload();
         };
     }
@@ -529,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Also handle the case where the current logged-in user should be online
                 let isOnline = parseInt(u.status) === 1;
                 
-                // Override status for current user to always be online
+                // Override status for current user ONLY if currentUser is actually set (i.e. logged in)
                 if(currentUser && u.username === currentUser.username) {
                     isOnline = true;
                 }
@@ -599,7 +601,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Ensure u.status is treated as integer for comparison
                         let isOnline = parseInt(u.status) === 1;
                         
-                        // Override status for current user
+                        // Override status for current user ONLY if currentUser is logged in
                         if(currentUser && u.username === currentUser.username) {
                             isOnline = true;
                         }
