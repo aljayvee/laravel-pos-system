@@ -344,9 +344,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 fullUserData = await window.posSystem.getUsers();
                 renderManageUsers(fullUserData);
 
+            } else if (pageId === 'sales_report') {
+                dom.adminContent.innerHTML = 'Loading...';
+                const salesCatData = await window.posSystem.getSalesByCategory();
+                
+                let html = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                        <h2>Sales Report</h2>
+                        <button class="btn btn-primary" onclick="renderDashboardPage('sales_report')"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                    <div class="content-card">
+                        <h3>Sales by Category</h3>
+                        <table style="width:100%; margin-top:15px; border-collapse:collapse;">
+                            <thead>
+                                <tr style="background:#f5f5f5; border-bottom:1px solid #ddd;">
+                                    <th style="padding:12px; text-align:left;">Category</th>
+                                    <th style="padding:12px; text-align:left;">Total Sales</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                if (salesCatData.length > 0) {
+                    salesCatData.forEach(row => {
+                        html += `
+                            <tr style="border-bottom:1px solid #eee;">
+                                <td style="padding:12px;">${row.category}</td>
+                                <td style="padding:12px; font-weight:bold; color:var(--primary);">Php ${Number(row.total_sales).toFixed(2)}</td>
+                            </tr>`;
+                    });
+                } else {
+                    html += '<tr><td colspan="2" style="padding:15px; text-align:center; color:#888;">No sales data found.</td></tr>';
+                }
+                
+                html += `</tbody></table></div>`;
+                dom.adminContent.innerHTML = html;
+
             } else if (pageId === 'sales_category') {
-                const sales = await window.posSystem.getSalesByCategory();
-                dom.adminContent.innerHTML = `<h2>Sales by Category</h2><ul>` + sales.map(s => `<li>${s.category}: <strong>Php ${s.total_sales}</strong></li>`).join('') + `</ul>`;
+                // Reuse the same logic for consistency, or redirect
+                renderDashboardPage('sales_report');
             
             } else if (pageId === 'online_accounts') {
                 const users = await window.posSystem.getUsers();
