@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let cart = [];
     let menus = {};
     let fullMenuData = {}; // Stores original data for search
+    let fullUserData = []; // Stores original user data for search
 
     // DOM Elements
     const dom = {
@@ -340,15 +341,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             } else if(pageId === 'manage_users') {
                 dom.adminContent.innerHTML = 'Loading...';
-                const users = await window.posSystem.getUsers();
-                let html = `
-                    <div style="display:flex; justify-content:space-between"><h2>Manage Users</h2><button class="btn btn-primary" onclick="openUserModal()">+ Add User</button></div>
-                    <table style="width:100%; margin-top:20px;"><tr><th>Username</th><th>Role</th><th>Actions</th></tr>`;
-                users.forEach(u => {
-                    html += `<tr><td>${u.username}</td><td>${u.role}</td>
-                    <td><button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'>Edit</button> <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})">Delete</button></td></tr>`;
-                });
-                dom.adminContent.innerHTML = html + '</table>';
+                fullUserData = await window.posSystem.getUsers();
+                renderManageUsers(fullUserData);
 
             } else if (pageId === 'sales_category') {
                 const sales = await window.posSystem.getSalesByCategory();
@@ -413,6 +407,84 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.click();
         } else {
             alert("You do not have permission to access this feature.");
+        }
+    };
+
+    // --- MANAGE USERS IMPLEMENTATION ---
+    function renderManageUsers(users) {
+        let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2>Manage Users</h2>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="user-search" placeholder="Search Users..." class="shop-input" onkeyup="searchUsers()">
+                    <button class="btn btn-primary" onclick="openUserModal()">+ Add User</button>
+                </div>
+            </div>
+            <table style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <thead style="background:#f4f4f4; border-bottom:2px solid #ddd;">
+                    <tr>
+                        <th style="padding:15px; text-align:left;">Username</th>
+                        <th style="padding:15px; text-align:left;">First Name</th>
+                        <th style="padding:15px; text-align:left;">Last Name</th>
+                        <th style="padding:15px; text-align:left;">Role</th>
+                        <th style="padding:15px; text-align:right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="user-list-body">
+        `;
+
+        if (users.length === 0) {
+            html += `<tr><td colspan="5" style="padding:20px; text-align:center; color:#777;">No users found.</td></tr>`;
+        } else {
+            users.forEach(u => {
+                html += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:12px 15px;">${u.username}</td>
+                        <td style="padding:12px 15px;">${u.first_name || '-'}</td>
+                        <td style="padding:12px 15px;">${u.last_name || '-'}</td>
+                        <td style="padding:12px 15px;"><span style="background:#eee; padding:4px 8px; border-radius:4px; font-size:0.85rem; font-weight:600;">${u.role.toUpperCase()}</span></td>
+                        <td style="padding:12px 15px; text-align:right;">
+                            <button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'><i class="fas fa-edit"></i> Edit</button> 
+                            <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})"><i class="fas fa-trash-alt"></i> Delete</button>
+                        </td>
+                    </tr>`;
+            });
+        }
+        
+        html += `</tbody></table>`;
+        dom.adminContent.innerHTML = html;
+    }
+
+    window.searchUsers = () => {
+        const query = document.getElementById('user-search').value.toLowerCase();
+        const filteredUsers = fullUserData.filter(u => 
+            u.username.toLowerCase().includes(query) ||
+            (u.first_name && u.first_name.toLowerCase().includes(query)) ||
+            (u.last_name && u.last_name.toLowerCase().includes(query)) ||
+            u.role.toLowerCase().includes(query)
+        );
+        
+        const tbody = document.getElementById('user-list-body');
+        if(tbody) {
+            let html = '';
+            if(filteredUsers.length === 0) {
+                html = `<tr><td colspan="5" style="padding:20px; text-align:center; color:#777;">No users found.</td></tr>`;
+            } else {
+                filteredUsers.forEach(u => {
+                    html += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:12px 15px;">${u.username}</td>
+                        <td style="padding:12px 15px;">${u.first_name || '-'}</td>
+                        <td style="padding:12px 15px;">${u.last_name || '-'}</td>
+                        <td style="padding:12px 15px;"><span style="background:#eee; padding:4px 8px; border-radius:4px; font-size:0.85rem; font-weight:600;">${u.role.toUpperCase()}</span></td>
+                        <td style="padding:12px 15px; text-align:right;">
+                            <button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'><i class="fas fa-edit"></i> Edit</button> 
+                            <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})"><i class="fas fa-trash-alt"></i> Delete</button>
+                        </td>
+                    </tr>`;
+                });
+            }
+            tbody.innerHTML = html;
         }
     };
 
