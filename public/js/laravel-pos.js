@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loginUser: document.getElementById('login-user'),
         loginPass: document.getElementById('login-pass'),
         loginBtn: document.getElementById('login-btn'),
+        sidebar: document.getElementById('admin-sidebar'), // Added sidebar reference
         sidebarNav: document.getElementById('sidebar-nav'),
         adminContent: document.getElementById('admin-content'),
         userModal: document.getElementById('user-modal'),
@@ -83,6 +84,13 @@ document.addEventListener('DOMContentLoaded', () => {
         productModal: document.getElementById('product-modal'),
         categoryModal: document.getElementById('category-modal')
     };
+
+    // --- SIDEBAR TOGGLE FUNCTIONALITY ---
+    if(dom.sidebarToggle && dom.sidebar) {
+        dom.sidebarToggle.onclick = () => {
+            dom.sidebar.classList.toggle('collapsed');
+        };
+    }
 
     // --- PERSISTENCE ---
     const savedUser = localStorage.getItem('pos_user');
@@ -297,9 +305,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderChart(salesData);
 
             } else if (pageId === 'manage_products') {
+                // --- CAPTURE STATE (Scroll & Open Categories) ---
+                let savedScroll = 0;
+                let savedOpenCats = null;
+                const container = document.getElementById('prod-list-container');
+                
+                if (container) {
+                    // Save vertical scroll position
+                    savedScroll = dom.adminContent.scrollTop;
+                    savedOpenCats = [];
+                    // Save list of currently open categories
+                    container.querySelectorAll('details').forEach(det => {
+                        if(det.hasAttribute('open')) {
+                            // The summary contains the category name + buttons. 
+                            // We get the first text node which is the name.
+                            const summary = det.querySelector('summary');
+                            if(summary && summary.childNodes.length > 0) {
+                                savedOpenCats.push(summary.childNodes[0].textContent.trim());
+                            }
+                        }
+                    });
+                }
+
                 dom.adminContent.innerHTML = 'Loading...';
                 fullMenuData = await window.posSystem.getMenu();
-                renderManageProducts(fullMenuData);
+                
+                // Pass captured state to render function
+                renderManageProducts(fullMenuData, savedOpenCats);
+                
+                // --- RESTORE SCROLL ---
+                if (savedScroll > 0) {
+                    dom.adminContent.scrollTop = savedScroll;
+                }
             
             } else if(pageId === 'manage_users') {
                 dom.adminContent.innerHTML = 'Loading...';
@@ -380,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- MANAGE PRODUCTS IMPLEMENTATION ---
-    function renderManageProducts(menuData) {
+    function renderManageProducts(menuData, openCats = null) {
         let html = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2>Manage Products</h2>
@@ -397,8 +434,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Safe fallback if products array is empty or malformed
             const catId = (products && products.length > 0) ? products[0].category_id : null; 
 
+            // Determine if this category should be open
+            // If openCats is null (first load), default to open.
+            // If openCats is an array, only open if it was previously open.
+            const isOpen = (openCats === null || openCats.includes(catName)) ? 'open' : '';
+
             html += `
-                <details open style="margin-bottom:15px; border:1px solid #ddd; border-radius:8px; padding:10px; background:#fff;">
+                <details ${isOpen} style="margin-bottom:15px; border:1px solid #ddd; border-radius:8px; padding:10px; background:#fff;">
                     <summary style="cursor:pointer; font-weight:bold; font-size:1.1rem; padding-bottom:10px;">
                         ${catName}
                         <div style="float:right; display:inline-block;">
