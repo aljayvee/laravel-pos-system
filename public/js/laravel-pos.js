@@ -524,7 +524,8 @@ document.addEventListener('DOMContentLoaded', () => {
             uHtml += `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
         } else {
             users.forEach(u => {
-                const isOnline = u.db_status === 'online';
+                // Ensure u.status is treated as integer for comparison
+                const isOnline = parseInt(u.status) === 1;
                 const statusHtml = isOnline 
                     ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
                     : '<span style="color:gray;">Offline</span>';
@@ -587,7 +588,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     html = `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
                 } else {
                     filteredUsers.forEach(u => {
-                        const isOnline = u.db_status === 'online';
+                        // Ensure u.status is treated as integer for comparison
+                        const isOnline = parseInt(u.status) === 1;
                         const statusHtml = isOnline 
                             ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
                             : '<span style="color:gray;">Offline</span>';
