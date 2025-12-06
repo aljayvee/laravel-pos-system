@@ -498,7 +498,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let uHtml = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2 style="font-weight:bold; font-size:1.8rem;">${title}</h2>
-                <button class="btn btn-primary" onclick="openUserModal()">+ Add New Account</button>
             </div>
             
             <div style="display:flex; align-items:center; gap:15px; margin-bottom:25px;">
@@ -516,14 +515,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th style="padding:15px; text-align:left; font-weight:bold;">Username</th>
                         <th style="padding:15px; text-align:left; font-weight:bold;">Role</th>
                         <th style="padding:15px; text-align:left; font-weight:bold;">Status</th>
-                        <th style="padding:15px; text-align:right; font-weight:bold;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
         if (users.length === 0) {
-            uHtml += `<tr><td colspan="6" style="padding:20px; color:#777;">No users found.</td></tr>`;
+            uHtml += `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
         } else {
             users.forEach(u => {
                 const isOnline = u.db_status === 'online';
@@ -538,10 +536,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td style="padding:15px;">${u.username}</td>
                     <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
                     <td style="padding:15px;">${statusHtml}</td>
-                    <td style="padding:15px; text-align:right;">
-                        <button class="btn btn-secondary btn-small" onclick='editUser(${JSON.stringify(u)})' style="margin-right:5px;"><i class="fas fa-edit"></i></button>
-                        <button class="btn btn-danger btn-small" onclick="delUser(${u.id})"><i class="fas fa-trash"></i></button>
-                    </td>
                 </tr>`;
             });
         }
@@ -590,7 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(tbody) {
                 let html = '';
                 if(filteredUsers.length === 0) {
-                    html = `<tr><td colspan="6" style="padding:20px; color:#777;">No users found.</td></tr>`;
+                    html = `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
                 } else {
                     filteredUsers.forEach(u => {
                         const isOnline = u.db_status === 'online';
@@ -605,10 +599,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td style="padding:15px;">${u.username}</td>
                             <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
                             <td style="padding:15px;">${statusHtml}</td>
-                            <td style="padding:15px; text-align:right;">
-                                <button class="btn btn-secondary btn-small" onclick='editUser(${JSON.stringify(u)})' style="margin-right:5px;"><i class="fas fa-edit"></i></button>
-                                <button class="btn btn-danger btn-small" onclick="delUser(${u.id})"><i class="fas fa-trash"></i></button>
-                            </td>
                         </tr>`;
                     });
                 }
