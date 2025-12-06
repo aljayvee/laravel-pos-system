@@ -525,7 +525,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             users.forEach(u => {
                 // Ensure u.status is treated as integer for comparison
-                const isOnline = parseInt(u.status) === 1;
+                // Use fallback to 'offline' if status is missing, but check for 1 strictly
+                // Also handle the case where the current logged-in user should be online
+                let isOnline = parseInt(u.status) === 1;
+                
+                // Override status for current user to always be online
+                if(currentUser && u.username === currentUser.username) {
+                    isOnline = true;
+                }
+
                 const statusHtml = isOnline 
                     ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
                     : '<span style="color:gray;">Offline</span>';
@@ -589,7 +597,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     filteredUsers.forEach(u => {
                         // Ensure u.status is treated as integer for comparison
-                        const isOnline = parseInt(u.status) === 1;
+                        let isOnline = parseInt(u.status) === 1;
+                        
+                        // Override status for current user
+                        if(currentUser && u.username === currentUser.username) {
+                            isOnline = true;
+                        }
+
                         const statusHtml = isOnline 
                             ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
                             : '<span style="color:gray;">Offline</span>';
