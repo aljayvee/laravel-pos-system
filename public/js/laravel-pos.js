@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let menus = {};
     let fullMenuData = {}; // Stores original data for search
     let fullUserData = []; // Stores original user data for search
+    let accountsRefreshInterval = null; // Store interval ID
 
     // DOM Elements
     const dom = {
@@ -126,6 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('pos_user');
             // Explicitly clear currentUser so UI logic knows we are logged out
             currentUser = null; 
+            // Clear interval if exists
+            if (accountsRefreshInterval) clearInterval(accountsRefreshInterval);
             window.location.reload();
         };
     }
@@ -259,6 +262,12 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderDashboardPage(pageId) {
         if(!dom.adminContent) return;
         
+        // Clear existing interval when switching pages
+        if (accountsRefreshInterval) {
+            clearInterval(accountsRefreshInterval);
+            accountsRefreshInterval = null;
+        }
+
         try {
             if(pageId === 'dashboard') {
                 dom.adminContent.innerHTML = 'Loading...';
@@ -387,9 +396,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderDashboardPage('sales_report');
             
             } else if (pageId === 'online_accounts') {
+                // Initial load
                 dom.adminContent.innerHTML = 'Loading...';
-                fullUserData = await window.posSystem.getUsers();
-                renderAccountsTable(fullUserData, "Online Accounts");
+                const fetchAndRender = async () => {
+                    fullUserData = await window.posSystem.getUsers();
+                    // Only re-render if we are still on the correct view to avoid errors
+                    if(document.getElementById('accounts-table') || dom.adminContent.innerHTML === 'Loading...') {
+                       renderAccountsTable(fullUserData, "Online Accounts");
+                    }
+                };
+                
+                await fetchAndRender();
+
+                // Set up polling to refresh data every 5 seconds
+                accountsRefreshInterval = setInterval(fetchAndRender, 5000);
             
             } else if (pageId === 'audit_logs') {
                 const logs = await window.posSystem.getLogs();
@@ -497,6 +517,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Count based on DB status
         const adminCount = users.filter(u => u.role === 'admin').length;
         
+        // Preserve search query if re-rendering
+        const searchInput = document.getElementById('user-search');
+        const currentQuery = searchInput ? searchInput.value : '';
+
         let uHtml = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2 style="font-weight:bold; font-size:1.8rem;">${title}</h2>
@@ -506,7 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div style="background:white; padding:10px 20px; border-radius:8px; border-left:5px solid var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.05); font-weight:bold;">
                     Total Admins: ${adminCount}
                 </div>
-                <input type="text" id="user-search" placeholder="Search accounts..." class="shop-input" style="width:300px; margin:0; border-radius:6px;" onkeyup="searchUsers()">
+                <input type="text" id="user-search" placeholder="Search accounts..." class="shop-input" style="width:300px; margin:0; border-radius:6px;" value="${currentQuery}" onkeyup="searchUsers()">
             </div>
             
             <table id="accounts-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden;">
@@ -519,13 +543,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th style="padding:15px; text-align:left; font-weight:bold;">Status</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="accounts-table-body">
         `;
 
-        if (users.length === 0) {
+        // If search is active, filter the users list first
+        let displayUsers = users;
+        if (currentQuery) {
+            displayUsers = users.filter(u => 
+                u.username.toLowerCase().includes(currentQuery.toLowerCase()) ||
+                (u.first_name && u.first_name.toLowerCase().includes(currentQuery.toLowerCase())) ||
+                (u.last_name && u.last_name.toLowerCase().includes(currentQuery.toLowerCase())) ||
+                u.role.toLowerCase().includes(currentQuery.toLowerCase())
+            );
+        }
+
+        if (displayUsers.length === 0) {
             uHtml += `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
         } else {
-            users.forEach(u => {
+            displayUsers.forEach(u => {
                 // Ensure u.status is treated as integer for comparison
                 // Use fallback to 'offline' if status is missing, but check for 1 strictly
                 // Also handle the case where the current logged-in user should be online
@@ -552,6 +587,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         uHtml += `</tbody></table>`;
         dom.adminContent.innerHTML = uHtml;
+        
+        // Re-focus input if it exists (prevents losing focus on refresh)
+        const newSearchInput = document.getElementById('user-search');
+        if (newSearchInput && currentQuery) {
+            newSearchInput.focus();
+            // Move cursor to end
+            const len = newSearchInput.value.length;
+            newSearchInput.setSelectionRange(len, len);
+        }
     }
 
     window.searchUsers = () => {
@@ -565,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // --- Determine which table to update (Manage Users vs Online Accounts) ---
         const manageTable = document.getElementById('user-list-body');
-        const onlineTable = document.getElementById('accounts-table');
+        const onlineTable = document.getElementById('accounts-table-body'); // Updated ID target
 
         if(manageTable) {
             // Logic for Manage Users (Older simple table)
@@ -591,37 +635,36 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
         else if (onlineTable) {
             // Logic for Online Accounts (New design)
-            const tbody = onlineTable.querySelector('tbody');
-            if(tbody) {
-                let html = '';
-                if(filteredUsers.length === 0) {
-                    html = `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
-                } else {
-                    filteredUsers.forEach(u => {
-                        // Ensure u.status is treated as integer for comparison
-                        let isOnline = parseInt(u.status) === 1;
-                        
-                        // Override status for current user ONLY if currentUser is logged in
-                        if(currentUser && u.username === currentUser.username) {
-                            isOnline = true;
-                        }
+            // Note: renderAccountsTable handles full re-render on polling, 
+            // but searchUsers handles immediate typing feedback.
+            let html = '';
+            if(filteredUsers.length === 0) {
+                html = `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
+            } else {
+                filteredUsers.forEach(u => {
+                    // Ensure u.status is treated as integer for comparison
+                    let isOnline = parseInt(u.status) === 1;
+                    
+                    // Override status for current user ONLY if currentUser is logged in
+                    if(currentUser && u.username === currentUser.username) {
+                        isOnline = true;
+                    }
 
-                        const statusHtml = isOnline 
-                            ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
-                            : '<span style="color:gray;">Offline</span>';
+                    const statusHtml = isOnline 
+                        ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
+                        : '<span style="color:gray;">Offline</span>';
 
-                        html += `
-                        <tr style="border-bottom:1px solid #f0f0f0;">
-                            <td style="padding:15px;">${u.first_name || '-'}</td>
-                            <td style="padding:15px;">${u.last_name || '-'}</td>
-                            <td style="padding:15px;">${u.username}</td>
-                            <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
-                            <td style="padding:15px;">${statusHtml}</td>
-                        </tr>`;
-                    });
-                }
-                tbody.innerHTML = html;
+                    html += `
+                    <tr style="border-bottom:1px solid #f0f0f0;">
+                        <td style="padding:15px;">${u.first_name || '-'}</td>
+                        <td style="padding:15px;">${u.last_name || '-'}</td>
+                        <td style="padding:15px;">${u.username}</td>
+                        <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
+                        <td style="padding:15px;">${statusHtml}</td>
+                    </tr>`;
+                });
             }
+            onlineTable.innerHTML = html;
         }
     };
 
