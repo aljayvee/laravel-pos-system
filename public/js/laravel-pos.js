@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 currentUser = user;
                 localStorage.setItem('pos_user', JSON.stringify(user));
-                let isOnline = parseInt(u.status) === 1;
+                
                 startSession();
             } else {
                 alert("Invalid Credentials");
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('pos_user');
             // Explicitly clear currentUser so UI logic knows we are logged out
             currentUser = null; 
-            let isOffline = parseInt(u.status) === 0;
+            
             // Clear interval if exists
             if (accountsRefreshInterval) clearInterval(accountsRefreshInterval);
             window.location.reload();
