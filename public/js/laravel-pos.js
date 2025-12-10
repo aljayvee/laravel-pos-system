@@ -42,7 +42,7 @@ const posSystem = {
     getDailySales: async () => posSystem._fetchJson('/api/daily-sales'),
     
     // User Management
-    getUsers: async () => posSystem._fetchJson('/api/all-users'),
+    getUsers: async () => posSystem._fetchJson('/api/users'),
     
     addUser: async (data) => posSystem._fetchJson('/api/users/add', { method: 'POST', body: JSON.stringify(data) }),
     updateUser: async (data) => posSystem._fetchJson('/api/users/update', { method: 'POST', body: JSON.stringify(data) }),
