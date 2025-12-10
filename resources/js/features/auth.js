@@ -10,12 +10,10 @@ export function initAuth() {
         if (loginBtn) {
             console.log("Login button found, attaching listener.");
             
-            // Clone to remove old listeners
             const newLoginBtn = loginBtn.cloneNode(true);
             loginBtn.parentNode.replaceChild(newLoginBtn, loginBtn);
 
             newLoginBtn.onclick = async () => {
-                console.log("Login clicked.");
                 const username = usernameInput.value.trim();
                 const password = passwordInput.value.trim();
 
@@ -69,7 +67,6 @@ export function initAuth() {
 
     attachLoginListener();
     
-    // Observer for dynamic DOM changes
     const observer = new MutationObserver(() => {
         if (document.getElementById('login-btn')) {
             attachLoginListener();
