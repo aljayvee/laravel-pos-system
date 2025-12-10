@@ -11,54 +11,58 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        // 1. Validate Input
-        $request->validate([
-            'username' => 'required',
-            'password' => 'required',
-        ]);
+        try {
+            $request->validate([
+                'username' => 'required',
+                'password' => 'required',
+            ]);
 
-        // 2. Find the user
-        $user = User::where('username', $request->username)->first();
+            $user = User::where('username', $request->username)->first();
 
-        // 3. Check Credentials
-        if (!$user) {
-            return response()->json(['message' => 'User not found'], 401);
-        }
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'User not found'], 401);
+            }
 
-        // PASSWORD CHECK LOGIC
-        // We check standard Laravel Hash (Bcrypt) OR the simple SHA256 from your old seeder
-        $isValid = false;
+            // --- PASSWORD VERIFICATION LOGIC ---
+            $isValid = false;
 
-        if (Hash::check($request->password, $user->password_hash)) {
-            $isValid = true;
-        } 
-        else if ($user->password_hash === hash('sha256', $request->password)) {
-            $isValid = true;
-            // Upgrade to Bcrypt automatically for security
-            $user->password_hash = Hash::make($request->password);
+            // 1. Check Standard Laravel Hash (Needs APP_KEY)
+            if (Hash::check($request->password, $user->password_hash)) {
+                $isValid = true;
+            } 
+            // 2. Check Legacy SHA256 (from your Seeder)
+            else if ($user->password_hash === hash('sha256', $request->password)) {
+                $isValid = true;
+                // Auto-upgrade to secure hash
+                $user->password_hash = Hash::make($request->password);
+                $user->save();
+            }
+
+            if (!$isValid) {
+                return response()->json(['success' => false, 'message' => 'Invalid credentials'], 401);
+            }
+
+            // --- SUCCESS ---
+            $user->status = 1;
             $user->save();
+
+            // Generate Token for API access
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Login successful',
+                'user' => $user,
+                'token' => $token 
+            ]);
+
+        } catch (\Exception $e) {
+            // Return JSON error instead of crashing with HTML 500
+            return response()->json([
+                'success' => false, 
+                'message' => 'Server Error: ' . $e->getMessage()
+            ], 500);
         }
-
-        if (!$isValid) {
-            return response()->json(['message' => 'Invalid password'], 401);
-        }
-
-        // 4. Update Status to Online
-        $user->status = 1;
-        $user->save();
-
-        // 5. Return Success Response
-        return response()->json([
-            'success' => true,
-            'user' => [
-                'id' => $user->id,
-                'username' => $user->username,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'role' => $user->role,
-                'status' => $user->status
-            ]
-        ]);
     }
 
     public function logout(Request $request)
@@ -68,9 +72,10 @@ class AuthController extends Controller
             $user = User::find($id);
             if ($user) {
                 $user->status = 0;
+                $user->tokens()->delete(); // Revoke tokens
                 $user->save();
             }
         }
-        return response()->json(['success' => true, 'message' => 'Logged out']);
+        return response()->json(['success' => true]);
     }
 }
