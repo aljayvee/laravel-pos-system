@@ -23,9 +23,14 @@ class PosController extends Controller
         $user = User::where('username', $request->username)->first();
         
         // Simple hash check for migration compatibility (SHA256)
+        // If you are using standard Laravel Auth, use Hash::check($request->password, $user->password)
         $inputHash = hash('sha256', $request->password);
         
         if ($user && $user->password_hash === $inputHash) {
+            // --- UPDATE STATUS TO ONLINE (1) ---
+            $user->status = 1;
+            $user->save();
+
             AuditLog::create(['username' => $user->username, 'action' => 'Logged In']);
             return response()->json($user);
         }
@@ -122,7 +127,8 @@ class PosController extends Controller
                 'password_hash' => hash('sha256', $request->password), // SHA256 for compatibility
                 'first_name' => $request->firstName,
                 'last_name' => $request->lastName,
-                'role' => $request->role
+                'role' => $request->role,
+                'status' => 0 // Default to offline
             ]);
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
@@ -177,9 +183,17 @@ class PosController extends Controller
     //logout
 
     public function logout(Request $request) {
-        // In a real app using Sanctum, you would revoke tokens here.
-        // For this migration, we just handle the status if you have a tracking table, 
-        // or simply return success.
+        // --- UPDATE STATUS TO OFFLINE (0) ---
+        // We need the ID to know WHO logged out
+        if ($request->id) {
+            $user = User::find($request->id);
+            if ($user) {
+                $user->status = 0;
+                $user->save();
+                
+                AuditLog::create(['username' => $user->username, 'action' => 'Logged Out']);
+            }
+        }
         return response()->json(['success' => true]);
     }
 
