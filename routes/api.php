@@ -4,7 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\PosController;
 
-// Default Laravel route (you can keep or remove)
+// Default Laravel route
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
@@ -17,8 +17,8 @@ Route::get('/dashboard-stats', [PosController::class, 'getStats']);
 Route::get('/daily-sales', [PosController::class, 'getDailySales']);
 Route::post('/add-product', [PosController::class, 'addProduct']);
 
-// User Management
-Route::get('/users', [PosController::class, 'getUsers']);
+// User Management (Renamed to avoid conflict)
+Route::get('/all-users', [PosController::class, 'getUsers']); // Changed from /users
 Route::post('/users/add', [PosController::class, 'addUser']);
 Route::post('/users/update', [PosController::class, 'updateUser']);
 Route::post('/users/delete', [PosController::class, 'deleteUser']);
@@ -28,7 +28,7 @@ Route::get('/history', [PosController::class, 'getHistory']);
 Route::get('/logs', [PosController::class, 'getLogs']);
 Route::get('/sales-category', [PosController::class, 'getSalesByCategory']);
 
-//logout
+// Logout
 Route::post('/logout', [PosController::class, 'logout']);
 
 // Category Management
