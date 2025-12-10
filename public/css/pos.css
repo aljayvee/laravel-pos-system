@@ -1,3 +1,4 @@
+@import 'tailwindcss';
 :root {
     --primary: #FF3B5C; /* TikTok Red/Pink vibe */
     --secondary: #2F2F2F;

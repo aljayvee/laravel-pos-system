@@ -5,7 +5,8 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>JayLeeBay POS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="{{ asset('css/pos.css') }}">
+    <!-- Add this -->
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
     
@@ -195,6 +196,6 @@
         </main>
     </div>
 
-    <script src="{{ asset('js/laravel-pos.js') }}"></script>
+    
 </body>
 </html>
