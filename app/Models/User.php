@@ -17,6 +17,7 @@ class User extends Authenticatable
         'first_name',
         'last_name',
         'role',
+        'status', // Added status to fillable
     ];
 
     protected $hidden = [

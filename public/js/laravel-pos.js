@@ -9,8 +9,9 @@ const posSystem = {
         return res.ok ? await res.json() : null;
     },
 
-    logout: async () => {
-        await fetch('/api/logout', { method: 'POST', headers: posSystem._headers });
+    // UPDATED: Accept data to pass the user ID
+    logout: async (data) => {
+        await fetch('/api/logout', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) });
         return { success: true };
     },
 
@@ -125,7 +126,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(dom.logoutBtn) {
         dom.logoutBtn.onclick = async () => {
-            await window.posSystem.logout();
+            // UPDATED: Pass ID to logout to update DB status
+            if (currentUser && currentUser.id) {
+                await window.posSystem.logout({ id: currentUser.id });
+            } else {
+                await window.posSystem.logout({});
+            }
+            
             localStorage.removeItem('pos_user');
             // Explicitly clear currentUser so UI logic knows we are logged out
             currentUser = null; 
