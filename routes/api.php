@@ -18,7 +18,7 @@ Route::get('/daily-sales', [PosController::class, 'getDailySales']);
 Route::post('/add-product', [PosController::class, 'addProduct']);
 
 // User Management
-// FIX: Changed from '/all-users' to '/users' to match frontend fetch calls
+// FIX: Ensure this matches the frontend call "/api/users"
 Route::get('/users', [PosController::class, 'getUsers']); 
 Route::post('/users/add', [PosController::class, 'addUser']);
 Route::post('/users/update', [PosController::class, 'updateUser']);
