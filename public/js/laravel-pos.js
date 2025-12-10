@@ -2,7 +2,7 @@
    PART 1: THE BRIDGE (API Communication)
    ========================================= */
 const posSystem = {
-    _headers: { 'Content-Type': 'application/json' },
+    _headers: { 'Content-Type': 'application/json' , 'Accept': 'application/json'},
     
     login: async (creds) => {
         const res = await fetch('/api/login', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(creds) });
@@ -438,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } catch (e) {
-            //console.error(e);
+            console.error(e);
             dom.adminContent.innerHTML = '<p>Error loading content</p>';
         }
     }
