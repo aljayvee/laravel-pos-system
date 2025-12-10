@@ -2,41 +2,58 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\PosController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\ReportController;
 
-// Default Laravel route
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+*/
 
-// --- YOUR POS ROUTES ---
-Route::post('/login', [PosController::class, 'login']);
-Route::get('/menu', [PosController::class, 'getMenu']);
-Route::post('/order', [PosController::class, 'saveOrder']);
-Route::get('/dashboard-stats', [PosController::class, 'getStats']);
-Route::get('/daily-sales', [PosController::class, 'getDailySales']);
-Route::post('/add-product', [PosController::class, 'addProduct']);
+// --- AUTHENTICATION (Public) ---
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/logout', [AuthController::class, 'logout']);
 
-// User Management
-// FIX: Ensure this matches the frontend call "/api/users"
-Route::get('/users', [PosController::class, 'getUsers']); 
-Route::post('/users/add', [PosController::class, 'addUser']);
-Route::post('/users/update', [PosController::class, 'updateUser']);
-Route::post('/users/delete', [PosController::class, 'deleteUser']);
+// --- SHARED/COMMON ROUTES (Authenticated) ---
+Route::middleware('auth:sanctum')->group(function () {
+    
+    Route::get('/user', function (Request $request) { return $request->user(); });
 
-// Reports
-Route::get('/history', [PosController::class, 'getHistory']);
-Route::get('/logs', [PosController::class, 'getLogs']);
-Route::get('/sales-category', [PosController::class, 'getSalesByCategory']);
+    // --- CASHIER & ORDERING ---
+    Route::get('/menu', [ProductController::class, 'getMenu']); // Cashier needs menu
+    Route::post('/order', [OrderController::class, 'store']);
+    
+    // --- ADMIN & MANAGER & SECURITY ---
+    // User Management
+    Route::prefix('users')->group(function () {
+        Route::get('/', [AdminController::class, 'index']);
+        Route::post('/add', [AdminController::class, 'store']);
+        Route::post('/update', [AdminController::class, 'update']);
+        Route::post('/delete', [AdminController::class, 'destroy']);
+        Route::get('/online', [AdminController::class, 'getOnlineUsers']);
+    });
 
-// Logout
-Route::post('/logout', [PosController::class, 'logout']);
+    // Product Management
+    Route::prefix('products')->group(function () {
+        Route::post('/add', [ProductController::class, 'store']);
+        Route::post('/update', [ProductController::class, 'update']);
+        Route::post('/delete', [ProductController::class, 'destroy']);
+    });
 
-// Category Management
-Route::post('/categories/add', [PosController::class, 'addCategory']);
-Route::post('/categories/update', [PosController::class, 'updateCategory']);
-Route::post('/categories/delete', [PosController::class, 'deleteCategory']);
+    Route::prefix('categories')->group(function () {
+        Route::post('/add', [ProductController::class, 'storeCategory']);
+        Route::post('/update', [ProductController::class, 'updateCategory']);
+        Route::post('/delete', [ProductController::class, 'destroyCategory']);
+    });
 
-// Product Management
-Route::post('/products/update', [PosController::class, 'updateProduct']);
-Route::post('/products/delete', [PosController::class, 'deleteProduct']);
+    // Reports & Dashboard
+    Route::get('/dashboard-stats', [ReportController::class, 'getStats']);
+    Route::get('/daily-sales', [ReportController::class, 'getDailySales']);
+    Route::get('/sales-category', [ReportController::class, 'getSalesByCategory']);
+    Route::get('/history', [ReportController::class, 'getTransactionHistory']);
+    Route::get('/logs', [AdminController::class, 'getAuditLogs']);
+});
