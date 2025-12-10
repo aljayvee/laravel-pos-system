@@ -2,49 +2,66 @@
    PART 1: THE BRIDGE (API Communication)
    ========================================= */
 const posSystem = {
-    _headers: { 'Content-Type': 'application/json' , 'Accept': 'application/json'},
+    _headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json' // CRITICAL: Ensures server sends JSON, not HTML/JS files on error
+    },
     
+    // Helper to handle responses and prevent "Unexpected token" errors
+    _fetchJson: async (url, options = {}) => {
+        const res = await fetch(url, { ...options, headers: posSystem._headers });
+        if (!res.ok) {
+            // Try to parse error message, otherwise fallback to status text
+            try {
+                const errorData = await res.json();
+                throw new Error(errorData.message || `Server Error: ${res.status}`);
+            } catch (e) {
+                throw new Error(`API Error: ${res.status} ${res.statusText}`);
+            }
+        }
+        return res.json();
+    },
+
     login: async (creds) => {
+        // Login needs special handling as it might return 401 without throwing
         const res = await fetch('/api/login', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(creds) });
         return res.ok ? await res.json() : null;
     },
 
-    // UPDATED: Accept data to pass the user ID
     logout: async (data) => {
-        await fetch('/api/logout', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) });
-        return { success: true };
+        return posSystem._fetchJson('/api/logout', { method: 'POST', body: JSON.stringify(data) });
     },
 
-    getMenu: async () => (await fetch('/api/menu')).json(),
+    getMenu: async () => posSystem._fetchJson('/api/menu'),
 
     saveOrder: async (data) => {
-        const res = await fetch('/api/order', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) });
-        return await res.json();
+        return posSystem._fetchJson('/api/order', { method: 'POST', body: JSON.stringify(data) });
     },
 
-    getDashboardStats: async () => (await fetch('/api/dashboard-stats')).json(),
-    getDailySales: async () => (await fetch('/api/daily-sales')).json(),
+    getDashboardStats: async () => posSystem._fetchJson('/api/dashboard-stats'),
+    getDailySales: async () => posSystem._fetchJson('/api/daily-sales'),
     
     // User Management
-    getUsers: async () => (await fetch('/api/users')).json(),
-    addUser: async (data) => (await fetch('/api/users/add', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
-    updateUser: async (data) => (await fetch('/api/users/update', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
-    deleteUser: async (data) => (await fetch('/api/users/delete', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    getUsers: async () => posSystem._fetchJson('/api/all-users'),
+    
+    addUser: async (data) => posSystem._fetchJson('/api/users/add', { method: 'POST', body: JSON.stringify(data) }),
+    updateUser: async (data) => posSystem._fetchJson('/api/users/update', { method: 'POST', body: JSON.stringify(data) }),
+    deleteUser: async (data) => posSystem._fetchJson('/api/users/delete', { method: 'POST', body: JSON.stringify(data) }),
 
     // Reports
-    getHistory: async () => (await fetch('/api/history')).json(),
-    getLogs: async () => (await fetch('/api/logs')).json(),
-    getSalesByCategory: async () => (await fetch('/api/sales-category')).json(),
+    getHistory: async () => posSystem._fetchJson('/api/history'),
+    getLogs: async () => posSystem._fetchJson('/api/logs'),
+    getSalesByCategory: async () => posSystem._fetchJson('/api/sales-category'),
     
     // Categories
-    addCategory: async (data) => (await fetch('/api/categories/add', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
-    updateCategory: async (data) => (await fetch('/api/categories/update', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
-    deleteCategory: async (data) => (await fetch('/api/categories/delete', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    addCategory: async (data) => posSystem._fetchJson('/api/categories/add', { method: 'POST', body: JSON.stringify(data) }),
+    updateCategory: async (data) => posSystem._fetchJson('/api/categories/update', { method: 'POST', body: JSON.stringify(data) }),
+    deleteCategory: async (data) => posSystem._fetchJson('/api/categories/delete', { method: 'POST', body: JSON.stringify(data) }),
 
     // Products
-    addMenuItem: async (data) => (await fetch('/api/add-product', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
-    updateProduct: async (data) => (await fetch('/api/products/update', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
-    deleteProduct: async (data) => (await fetch('/api/products/delete', { method: 'POST', headers: posSystem._headers, body: JSON.stringify(data) })).json(),
+    addMenuItem: async (data) => posSystem._fetchJson('/api/add-product', { method: 'POST', body: JSON.stringify(data) }),
+    updateProduct: async (data) => posSystem._fetchJson('/api/products/update', { method: 'POST', body: JSON.stringify(data) }),
+    deleteProduct: async (data) => posSystem._fetchJson('/api/products/delete', { method: 'POST', body: JSON.stringify(data) }),
 
     printReceipt: async (data) => {
         const win = window.open('', '', 'width=400,height=600');
@@ -62,9 +79,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser = null;
     let cart = [];
     let menus = {};
-    let fullMenuData = {}; // Stores original data for search
-    let fullUserData = []; // Stores original user data for search
-    let accountsRefreshInterval = null; // Store interval ID
+    let fullMenuData = {}; 
+    let fullUserData = []; 
+    let accountsRefreshInterval = null; 
 
     // DOM Elements
     const dom = {
@@ -75,15 +92,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loginUser: document.getElementById('login-user'),
         loginPass: document.getElementById('login-pass'),
         loginBtn: document.getElementById('login-btn'),
-        sidebar: document.getElementById('admin-sidebar'), // Added sidebar reference
+        sidebar: document.getElementById('admin-sidebar'),
         sidebarNav: document.getElementById('sidebar-nav'),
         adminContent: document.getElementById('admin-content'),
         userModal: document.getElementById('user-modal'),
         headerUser: document.getElementById('header-username'),
         sidebarToggle: document.getElementById('sidebar-toggle'),
         logoutBtn: document.getElementById('global-logout-btn'),
-        
-        // Product Modals
         productModal: document.getElementById('product-modal'),
         categoryModal: document.getElementById('category-modal')
     };
@@ -113,10 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const user = await window.posSystem.login({ username, password });
             if (user) {
-                
                 currentUser = user;
                 localStorage.setItem('pos_user', JSON.stringify(user));
-                
                 startSession();
             } else {
                 alert("Invalid Credentials");
@@ -126,18 +139,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(dom.logoutBtn) {
         dom.logoutBtn.onclick = async () => {
-            // UPDATED: Pass ID to logout to update DB status
             if (currentUser && currentUser.id) {
+                // Pass ID to update DB status
                 await window.posSystem.logout({ id: currentUser.id });
             } else {
                 await window.posSystem.logout({});
             }
-            
             localStorage.removeItem('pos_user');
-            // Explicitly clear currentUser so UI logic knows we are logged out
             currentUser = null; 
-            
-            // Clear interval if exists
             if (accountsRefreshInterval) clearInterval(accountsRefreshInterval);
             window.location.reload();
         };
@@ -272,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderDashboardPage(pageId) {
         if(!dom.adminContent) return;
         
-        // Clear existing interval when switching pages
         if (accountsRefreshInterval) {
             clearInterval(accountsRefreshInterval);
             accountsRefreshInterval = null;
@@ -327,20 +335,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderChart(salesData);
 
             } else if (pageId === 'manage_products') {
-                // --- CAPTURE STATE (Scroll & Open Categories) ---
                 let savedScroll = 0;
                 let savedOpenCats = null;
                 const container = document.getElementById('prod-list-container');
-                
                 if (container) {
-                    // Save vertical scroll position
                     savedScroll = dom.adminContent.scrollTop;
                     savedOpenCats = [];
-                    // Save list of currently open categories
                     container.querySelectorAll('details').forEach(det => {
                         if(det.hasAttribute('open')) {
-                            // The summary contains the category name + buttons. 
-                            // We get the first text node which is the name.
                             const summary = det.querySelector('summary');
                             if(summary && summary.childNodes.length > 0) {
                                 savedOpenCats.push(summary.childNodes[0].textContent.trim());
@@ -351,14 +353,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 dom.adminContent.innerHTML = 'Loading...';
                 fullMenuData = await window.posSystem.getMenu();
-                
-                // Pass captured state to render function
                 renderManageProducts(fullMenuData, savedOpenCats);
-                
-                // --- RESTORE SCROLL ---
-                if (savedScroll > 0) {
-                    dom.adminContent.scrollTop = savedScroll;
-                }
+                if (savedScroll > 0) dom.adminContent.scrollTop = savedScroll;
             
             } else if(pageId === 'manage_users') {
                 dom.adminContent.innerHTML = 'Loading...';
@@ -368,7 +364,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (pageId === 'sales_report') {
                 dom.adminContent.innerHTML = 'Loading...';
                 const salesCatData = await window.posSystem.getSalesByCategory();
-                
                 let html = `
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                         <h2>Sales Report</h2>
@@ -383,9 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <th style="padding:12px; text-align:left;">Total Sales</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                `;
-                
+                            <tbody>`;
                 if (salesCatData.length > 0) {
                     salesCatData.forEach(row => {
                         html += `
@@ -397,28 +390,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     html += '<tr><td colspan="2" style="padding:15px; text-align:center; color:#888;">No sales data found.</td></tr>';
                 }
-                
                 html += `</tbody></table></div>`;
                 dom.adminContent.innerHTML = html;
 
             } else if (pageId === 'sales_category') {
-                // Reuse the same logic for consistency, or redirect
                 renderDashboardPage('sales_report');
             
             } else if (pageId === 'online_accounts') {
-                // Initial load
                 dom.adminContent.innerHTML = 'Loading...';
                 const fetchAndRender = async () => {
                     fullUserData = await window.posSystem.getUsers();
-                    // Only re-render if we are still on the correct view to avoid errors
                     if(document.getElementById('accounts-table') || dom.adminContent.innerHTML === 'Loading...') {
                        renderAccountsTable(fullUserData, "Online Accounts");
                     }
                 };
-                
                 await fetchAndRender();
-
-                // Set up polling to refresh data every 5 seconds
                 accountsRefreshInterval = setInterval(fetchAndRender, 5000);
             
             } else if (pageId === 'audit_logs') {
@@ -439,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (e) {
             console.error(e);
-            dom.adminContent.innerHTML = '<p>Error loading content</p>';
+            dom.adminContent.innerHTML = `<p class="message error-message">Error loading content: ${e.message}</p>`;
         }
     }
 
@@ -460,7 +446,6 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = html;
     }
 
-    // --- QUICK ACTION HANDLER ---
     window.handleQuickAction = (action) => {
         const mapping = {
             'manage_users': 'Manage Admins/Users',
@@ -469,15 +454,9 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const targetLabel = mapping[action];
         const btn = Array.from(dom.sidebarNav.querySelectorAll('button')).find(b => b.innerText.includes(targetLabel));
-        
-        if(btn) {
-            btn.click();
-        } else {
-            alert("You do not have permission to access this feature.");
-        }
+        if(btn) btn.click(); else alert("You do not have permission to access this feature.");
     };
 
-    // --- MANAGE USERS IMPLEMENTATION ---
     function renderManageUsers(users) {
         let html = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -522,12 +501,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.adminContent.innerHTML = html;
     }
 
-    // --- ONLINE ACCOUNTS IMPLEMENTATION (DESIGN MATCH) ---
     function renderAccountsTable(users, title = "Online Accounts") {
-        // Count based on DB status
         const adminCount = users.filter(u => u.role === 'admin').length;
-        
-        // Preserve search query if re-rendering
         const searchInput = document.getElementById('user-search');
         const currentQuery = searchInput ? searchInput.value : '';
 
@@ -556,7 +531,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tbody id="accounts-table-body">
         `;
 
-        // If search is active, filter the users list first
         let displayUsers = users;
         if (currentQuery) {
             displayUsers = users.filter(u => 
@@ -571,16 +545,10 @@ document.addEventListener('DOMContentLoaded', () => {
             uHtml += `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
         } else {
             displayUsers.forEach(u => {
-                // Ensure u.status is treated as integer for comparison
-                // Use fallback to 'offline' if status is missing, but check for 1 strictly
-                // Also handle the case where the current logged-in user should be online
                 let isOnline = parseInt(u.status) === 1;
-                
-                // Override status for current user ONLY if currentUser is actually set (i.e. logged in)
                 if(currentUser && u.username === currentUser.username) {
                     isOnline = true;
                 }
-
                 const statusHtml = isOnline 
                     ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
                     : '<span style="color:gray;">Offline</span>';
@@ -598,11 +566,9 @@ document.addEventListener('DOMContentLoaded', () => {
         uHtml += `</tbody></table>`;
         dom.adminContent.innerHTML = uHtml;
         
-        // Re-focus input if it exists (prevents losing focus on refresh)
         const newSearchInput = document.getElementById('user-search');
         if (newSearchInput && currentQuery) {
             newSearchInput.focus();
-            // Move cursor to end
             const len = newSearchInput.value.length;
             newSearchInput.setSelectionRange(len, len);
         }
@@ -617,12 +583,10 @@ document.addEventListener('DOMContentLoaded', () => {
             u.role.toLowerCase().includes(query)
         );
         
-        // --- Determine which table to update (Manage Users vs Online Accounts) ---
         const manageTable = document.getElementById('user-list-body');
-        const onlineTable = document.getElementById('accounts-table-body'); // Updated ID target
+        const onlineTable = document.getElementById('accounts-table-body');
 
         if(manageTable) {
-            // Logic for Manage Users (Older simple table)
             let html = '';
             if(filteredUsers.length === 0) {
                 html = `<tr><td colspan="5" style="padding:20px; text-align:center; color:#777;">No users found.</td></tr>`;
@@ -644,22 +608,13 @@ document.addEventListener('DOMContentLoaded', () => {
             manageTable.innerHTML = html;
         } 
         else if (onlineTable) {
-            // Logic for Online Accounts (New design)
-            // Note: renderAccountsTable handles full re-render on polling, 
-            // but searchUsers handles immediate typing feedback.
             let html = '';
             if(filteredUsers.length === 0) {
                 html = `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
             } else {
                 filteredUsers.forEach(u => {
-                    // Ensure u.status is treated as integer for comparison
                     let isOnline = parseInt(u.status) === 1;
-                    
-                    // Override status for current user ONLY if currentUser is logged in
-                    if(currentUser && u.username === currentUser.username) {
-                        isOnline = true;
-                    }
-
+                    if(currentUser && u.username === currentUser.username) isOnline = true;
                     const statusHtml = isOnline 
                         ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
                         : '<span style="color:gray;">Offline</span>';
@@ -678,7 +633,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- MANAGE PRODUCTS IMPLEMENTATION ---
     function renderManageProducts(menuData, openCats = null) {
         let html = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -693,12 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         Object.keys(menuData).forEach(catName => {
             const products = menuData[catName];
-            // Safe fallback if products array is empty or malformed
             const catId = (products && products.length > 0) ? products[0].category_id : null; 
-
-            // Determine if this category should be open
-            // If openCats is null (first load), default to open.
-            // If openCats is an array, only open if it was previously open.
             const isOpen = (openCats === null || openCats.includes(catName)) ? 'open' : '';
 
             html += `
@@ -729,10 +678,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                 });
             }
-            
             html += `</table></details>`;
         });
-        
         html += `</div>`;
         dom.adminContent.innerHTML = html;
     }
@@ -743,17 +690,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         Object.keys(fullMenuData).forEach(cat => {
             const catMatch = cat.toLowerCase().includes(query);
-            const itemsMatch = fullMenuData[cat].filter(p => 
-                p.name.toLowerCase().includes(query) || 
-                p.price.toString().includes(query)
-            );
-            
-            if (catMatch || itemsMatch.length > 0) {
-                filteredData[cat] = catMatch ? fullMenuData[cat] : itemsMatch;
-            }
+            const itemsMatch = fullMenuData[cat].filter(p => p.name.toLowerCase().includes(query) || p.price.toString().includes(query));
+            if (catMatch || itemsMatch.length > 0) filteredData[cat] = catMatch ? fullMenuData[cat] : itemsMatch;
         });
         
-        // Re-render just the list content manually
         const container = document.getElementById('prod-list-container');
         if(container) {
             let html = '';
@@ -793,31 +733,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- CATEGORY MODAL HANDLERS ---
     window.openCategoryModal = (id = null, name = "") => {
         if(!dom.categoryModal) return;
-        
         const title = dom.categoryModal.querySelector('h3');
         const input = document.getElementById('cat-name-input');
         const saveBtn = document.getElementById('cat-save-btn');
-        
         if(title) title.textContent = id ? "Edit Category" : "Add New Category";
         if(input) input.value = name;
         
         saveBtn.onclick = async () => {
             const newName = input.value.trim();
             if(!newName) return alert("Name required");
-            
-            if(id) {
-                await window.posSystem.updateCategory({ id, name: newName });
-            } else {
-                await window.posSystem.addCategory({ name: newName });
-            }
+            if(id) await window.posSystem.updateCategory({ id, name: newName });
+            else await window.posSystem.addCategory({ name: newName });
             alert("Category Saved");
             dom.categoryModal.style.display = 'none';
             renderDashboardPage('manage_products');
         };
-        
         dom.categoryModal.style.display = 'flex';
     };
 
@@ -828,10 +760,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- PRODUCT MODAL HANDLERS ---
     window.openProductModal = (product = null, catName = "") => {
         if(!dom.productModal) return;
-        
         const title = document.getElementById('prod-modal-title');
         const nameInput = document.getElementById('prod-name');
         const priceInput = document.getElementById('prod-price');
@@ -846,19 +776,13 @@ document.addEventListener('DOMContentLoaded', () => {
         saveBtn.onclick = async () => {
             const name = nameInput.value.trim();
             const price = priceInput.value;
-            
             if(!name || !price) return alert("Invalid inputs");
-            
-            if (product) {
-                await window.posSystem.updateProduct({ id: product.id, name, price });
-            } else {
-                await window.posSystem.addMenuItem({ category: catName, name, price });
-            }
+            if (product) await window.posSystem.updateProduct({ id: product.id, name, price });
+            else await window.posSystem.addMenuItem({ category: catName, name, price });
             alert("Product Saved");
             dom.productModal.style.display = 'none';
             renderDashboardPage('manage_products');
         };
-        
         dom.productModal.style.display = 'flex';
     };
 
@@ -872,7 +796,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- USER MODAL HANDLERS ---
     window.openUserModal = () => { if(dom.userModal) dom.userModal.style.display = 'flex'; };
     window.closeUserModal = () => { if(dom.userModal) dom.userModal.style.display = 'none'; };
     
@@ -900,7 +823,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
     
-    // Default Add User Handler
     const defaultUserSave = async () => {
         const data = {
             username: document.getElementById('user-username').value,
@@ -915,7 +837,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDashboardPage('manage_users'); 
     };
     
-    // Bind Add User button to reset modal state
     const oldOpenUserModal = window.openUserModal;
     window.openUserModal = () => {
         oldOpenUserModal();
