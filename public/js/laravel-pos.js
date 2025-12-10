@@ -11,25 +11,20 @@ const posSystem = {
             
             // If response is not OK (e.g., 404, 500), throw an error
             if (!res.ok) {
-                // Try to get error message from text if possible
                 const text = await res.text();
-                // Check if text looks like JSON before parsing
-                if (text.startsWith('{') || text.startsWith('[')) {
+                // Try parsing JSON error from server
+                try {
                     const json = JSON.parse(text);
-                    throw new Error(json.message || `API Error: ${res.status} ${res.statusText}`);
+                    console.error(`API Error (${url}):`, json);
+                    throw new Error(json.message || `API Error: ${res.status}`);
+                } catch (e) {
+                    // If parsing failed, it's likely HTML (404 page, etc)
+                    console.error(`API Fatal Error (${url}): Server returned non-JSON`, text.substring(0, 50));
+                    throw new Error(`API Error: ${res.status} ${res.statusText}`);
                 }
-                throw new Error(`API Error: ${res.status} ${res.statusText}`);
             }
 
-            // Check if content type is JSON
-            const contentType = res.headers.get("content-type");
-            if (contentType && contentType.indexOf("application/json") !== -1) {
-                return await res.json();
-            } else {
-                // If we expected JSON but got something else (like HTML or JS file), return null
-                console.warn("Received non-JSON response from API:", url);
-                return null;
-            }
+            return await res.json();
         } catch (err) {
             console.error(`Request failed for ${url}:`, err.message);
             return null; // Return null so the app doesn't crash on syntax errors
@@ -45,7 +40,6 @@ const posSystem = {
     },
 
     logout: async (userId) => {
-        // Send empty object if userId is missing to ensure valid JSON body
         const body = userId ? JSON.stringify({ id: userId }) : '{}';
         await posSystem._fetchJson('/api/logout', { 
             method: 'POST', 
@@ -105,9 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser = null;
     let cart = [];
     let menus = {};
-    let fullMenuData = {}; // Stores original data for search
-    let fullUserData = []; // Stores original user data for search
-    let accountsRefreshInterval = null; // Store interval ID
+    let fullMenuData = {}; 
+    let fullUserData = []; 
+    let accountsRefreshInterval = null; 
 
     // DOM Elements
     const dom = {
@@ -125,13 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
         headerUser: document.getElementById('header-username'),
         sidebarToggle: document.getElementById('sidebar-toggle'),
         logoutBtn: document.getElementById('global-logout-btn'),
-        
-        // Product Modals
         productModal: document.getElementById('product-modal'),
         categoryModal: document.getElementById('category-modal')
     };
 
-    // --- SIDEBAR TOGGLE FUNCTIONALITY ---
+    // --- SIDEBAR TOGGLE ---
     if(dom.sidebarToggle && dom.sidebar) {
         dom.sidebarToggle.onclick = () => {
             dom.sidebar.classList.toggle('collapsed');
@@ -172,7 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 await window.posSystem.logout(null);
             }
-            
             localStorage.removeItem('pos_user');
             currentUser = null; 
             if (accountsRefreshInterval) clearInterval(accountsRefreshInterval);
@@ -208,14 +199,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if(catContainer) catContainer.innerHTML = ''; 
         if(grid) grid.innerHTML = '';
 
-        Object.keys(menus).forEach(cat => {
+        const categories = Object.keys(menus);
+        if(categories.length === 0) {
+            if(grid) grid.innerHTML = '<p style="padding:20px;">No items found.</p>';
+            return;
+        }
+
+        categories.forEach(cat => {
             const btn = document.createElement('button');
             btn.textContent = cat;
             btn.onclick = () => renderProducts(cat);
             if(catContainer) catContainer.appendChild(btn);
         });
 
-        if(Object.keys(menus).length > 0) renderProducts(Object.keys(menus)[0]);
+        if(categories.length > 0) renderProducts(categories[0]);
     }
 
     function renderProducts(cat) {
@@ -309,7 +306,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderDashboardPage(pageId) {
         if(!dom.adminContent) return;
         
-        // Clear existing interval when switching pages
         if (accountsRefreshInterval) {
             clearInterval(accountsRefreshInterval);
             accountsRefreshInterval = null;
@@ -338,64 +334,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             <h3>Total Users</h3><p style="font-size:24px; font-weight:bold;">${stats.userCount || 0}</p>
                         </div>
                     </div>
-
+                    
                     <div style="display:grid; grid-template-columns: 2fr 1fr; gap:20px;">
                         <div style="background:#fff; padding:20px; border-radius:12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
                             <h3>Weekly Sales Chart</h3>
                             <div id="revenue-chart-bars" style="display:flex; align-items:flex-end; justify-content:space-around; height:200px; margin-top:20px; border-bottom:1px solid #eee;"></div>
-                        </div>
-                        
-                        <div style="background:#fff; padding:20px; border-radius:12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                            <h3>Quick Actions</h3>
-                            <div style="display:flex; flex-direction:column; gap:10px; margin-top:20px;">
-                                <button class="btn" style="text-align:left; background:#f8f9fa; border:1px solid #eee;" onclick="handleQuickAction('manage_users')">
-                                    <i class="fas fa-user-shield" style="color:#FF3B5C; margin-right:10px;"></i> Manage Admins
-                                </button>
-                                <button class="btn" style="text-align:left; background:#f8f9fa; border:1px solid #eee;" onclick="handleQuickAction('manage_products')">
-                                    <i class="fas fa-box" style="color:#00C853; margin-right:10px;"></i> Add New Product
-                                </button>
-                                <button class="btn" style="text-align:left; background:#f8f9fa; border:1px solid #eee;" onclick="handleQuickAction('sales_report')">
-                                    <i class="fas fa-chart-pie" style="color:orange; margin-right:10px;"></i> View Sales Report
-                                </button>
-                            </div>
                         </div>
                     </div>`;
                 
                 renderChart(salesData);
 
             } else if (pageId === 'manage_products') {
-                // --- CAPTURE STATE (Scroll & Open Categories) ---
-                let savedScroll = 0;
-                let savedOpenCats = null;
-                const container = document.getElementById('prod-list-container');
-                
-                if (container) {
-                    // Save vertical scroll position
-                    savedScroll = dom.adminContent.scrollTop;
-                    savedOpenCats = [];
-                    // Save list of currently open categories
-                    container.querySelectorAll('details').forEach(det => {
-                        if(det.hasAttribute('open')) {
-                            // The summary contains the category name + buttons. 
-                            // We get the first text node which is the name.
-                            const summary = det.querySelector('summary');
-                            if(summary && summary.childNodes.length > 0) {
-                                savedOpenCats.push(summary.childNodes[0].textContent.trim());
-                            }
-                        }
-                    });
-                }
-
                 dom.adminContent.innerHTML = 'Loading...';
                 fullMenuData = await window.posSystem.getMenu();
-                
-                // Pass captured state to render function
-                renderManageProducts(fullMenuData, savedOpenCats);
-                
-                // --- RESTORE SCROLL ---
-                if (savedScroll > 0) {
-                    dom.adminContent.scrollTop = savedScroll;
-                }
+                renderManageProducts(fullMenuData);
             
             } else if(pageId === 'manage_users') {
                 dom.adminContent.innerHTML = 'Loading...';
@@ -406,59 +358,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 dom.adminContent.innerHTML = 'Loading...';
                 const salesCatData = await window.posSystem.getSalesByCategory();
                 
-                let html = `
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                        <h2>Sales Report</h2>
-                        <button class="btn btn-primary" onclick="renderDashboardPage('sales_report')"><i class="fas fa-sync"></i> Refresh</button>
-                    </div>
-                    <div class="content-card">
-                        <h3>Sales by Category</h3>
-                        <table style="width:100%; margin-top:15px; border-collapse:collapse;">
-                            <thead>
-                                <tr style="background:#f5f5f5; border-bottom:1px solid #ddd;">
-                                    <th style="padding:12px; text-align:left;">Category</th>
-                                    <th style="padding:12px; text-align:left;">Total Sales</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
+                let html = `<h2>Sales Report</h2><div class="content-card"><h3>Sales by Category</h3><table style="width:100%; margin-top:15px; border-collapse:collapse;"><thead><tr style="background:#f5f5f5; border-bottom:1px solid #ddd;"><th style="padding:12px; text-align:left;">Category</th><th style="padding:12px; text-align:left;">Total Sales</th></tr></thead><tbody>`;
                 
                 if (salesCatData.length > 0) {
                     salesCatData.forEach(row => {
-                        html += `
-                            <tr style="border-bottom:1px solid #eee;">
-                                <td style="padding:12px;">${row.category}</td>
-                                <td style="padding:12px; font-weight:bold; color:var(--primary);">Php ${Number(row.total_sales).toFixed(2)}</td>
-                            </tr>`;
+                        html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:12px;">${row.category}</td><td style="padding:12px; font-weight:bold; color:var(--primary);">Php ${Number(row.total_sales).toFixed(2)}</td></tr>`;
                     });
                 } else {
                     html += '<tr><td colspan="2" style="padding:15px; text-align:center; color:#888;">No sales data found.</td></tr>';
                 }
-                
                 html += `</tbody></table></div>`;
                 dom.adminContent.innerHTML = html;
 
             } else if (pageId === 'sales_category') {
-                // Reuse the same logic for consistency, or redirect
                 renderDashboardPage('sales_report');
             
             } else if (pageId === 'online_accounts') {
-                // Initial load
                 dom.adminContent.innerHTML = 'Loading...';
                 const fetchAndRender = async () => {
                     fullUserData = await window.posSystem.getUsers();
-                    // Ensure fullUserData is an array if API failed
                     if (!Array.isArray(fullUserData)) fullUserData = [];
-
-                    // Only re-render if we are still on the correct view to avoid errors
                     if(document.getElementById('accounts-table') || dom.adminContent.innerHTML === 'Loading...') {
                        renderAccountsTable(fullUserData, "Online Accounts");
                     }
                 };
                 
                 await fetchAndRender();
-
-                // Set up polling to refresh data every 3 seconds
                 accountsRefreshInterval = setInterval(fetchAndRender, 3000);
             
             } else if (pageId === 'audit_logs') {
@@ -472,11 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     html += `<tr><td>${h.reference_number}</td><td>Php ${h.total_cost}</td><td>${h.order_status}</td><td>${h.created_at}</td></tr>`;
                 });
                 dom.adminContent.innerHTML = html + '</table>';
-
-            } else {
-                 dom.adminContent.innerHTML = `<h2>${pageId}</h2><p>Feature under construction</p>`;
             }
-
         } catch (e) {
             console.error(e);
             dom.adminContent.innerHTML = `<p style="color:red; padding:20px;">Error loading content: ${e.message}</p>`;
@@ -486,10 +407,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderChart(data) {
         const container = document.getElementById('revenue-chart-bars');
         if(!container) return;
+        if (!Array.isArray(data)) data = []; 
+        
+        let html = '';
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const today = new Date();
-        let html = '';
-        if (!Array.isArray(data)) data = []; // Safety check
+        
         for(let i=6; i>=0; i--) {
             const d = new Date(); d.setDate(today.getDate() - i);
             const dateStr = d.toISOString().split('T')[0];
@@ -510,15 +433,61 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const targetLabel = mapping[action];
         const btn = Array.from(dom.sidebarNav.querySelectorAll('button')).find(b => b.innerText.includes(targetLabel));
-        
-        if(btn) {
-            btn.click();
-        } else {
-            alert("You do not have permission to access this feature.");
-        }
+        if(btn) btn.click();
     };
 
-    // --- MANAGE USERS IMPLEMENTATION ---
+    // --- HELPER FUNCTIONS (DEFINED HERE TO AVOID REFERENCE ERRORS) ---
+    
+    function renderManageProducts(menuData) {
+        let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2>Manage Products</h2>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="prod-search" placeholder="Search..." class="shop-input" onkeyup="searchProducts()">
+                    <button class="btn btn-primary" onclick="openCategoryModal()">+ Add Category</button>
+                </div>
+            </div>
+            <div id="prod-list-container">
+        `;
+        
+        Object.keys(menuData).forEach(catName => {
+            const products = menuData[catName];
+            const catId = (products && products.length > 0) ? products[0].category_id : null; 
+
+            html += `
+                <details open style="margin-bottom:15px; border:1px solid #ddd; border-radius:8px; padding:10px; background:#fff;">
+                    <summary style="cursor:pointer; font-weight:bold; font-size:1.1rem; padding-bottom:10px;">
+                        ${catName}
+                        <div style="float:right; display:inline-block;">
+                            <button class="btn btn-sm btn-success" onclick='openProductModal(null, "${catName}")'>+ Add Item</button>
+                            ${catId ? `<button class="btn btn-sm btn-secondary" onclick='openCategoryModal(${catId}, "${catName}")'>Edit Cat</button>` : ''}
+                            ${catId ? `<button class="btn btn-sm btn-danger" onclick='deleteCategory(${catId})'>Del Cat</button>` : ''}
+                        </div>
+                    </summary>
+                    <table style="width:100%; margin-top:5px; border-collapse:collapse;">
+                        ${(!products || products.length === 0) ? '<tr><td colspan="3">No items</td></tr>' : ''}
+            `;
+            
+            if(products) {
+                products.forEach(p => {
+                    html += `
+                        <tr style="border-top:1px solid #eee;">
+                            <td style="padding:8px;">${p.name}</td>
+                            <td style="padding:8px;">Php ${parseFloat(p.price).toFixed(2)}</td>
+                            <td style="text-align:right; padding:8px;">
+                                <button class="btn btn-sm btn-secondary" onclick='openProductModal(${JSON.stringify(p)}, "${catName}")'>Edit</button>
+                                <button class="btn btn-sm btn-danger" onclick='deleteProduct(${p.id})'>Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            html += `</table></details>`;
+        });
+        html += `</div>`;
+        dom.adminContent.innerHTML = html;
+    }
+
     function renderManageUsers(users) {
         let html = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -529,11 +498,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <table style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                <thead style="background:#f4f4f4; border-bottom:2px solid #ddd;">
-                    <tr>
+                <thead>
+                    <tr style="background:#f4f4f4; border-bottom:2px solid #ddd;">
                         <th style="padding:15px; text-align:left;">Username</th>
                         <th style="padding:15px; text-align:left;">First Name</th>
-                        <th style="padding:15px; text-align:left;">Last Name</th>
                         <th style="padding:15px; text-align:left;">Role</th>
                         <th style="padding:15px; text-align:right;">Actions</th>
                     </tr>
@@ -542,35 +510,28 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         if (!users || users.length === 0) {
-            html += `<tr><td colspan="5" style="padding:20px; text-align:center; color:#777;">No users found.</td></tr>`;
+            html += `<tr><td colspan="4" style="padding:20px; text-align:center;">No users found.</td></tr>`;
         } else {
             users.forEach(u => {
                 html += `
                     <tr style="border-bottom:1px solid #eee;">
                         <td style="padding:12px 15px;">${u.username}</td>
-                        <td style="padding:12px 15px;">${u.first_name || '-'}</td>
-                        <td style="padding:12px 15px;">${u.last_name || '-'}</td>
-                        <td style="padding:12px 15px;"><span style="background:#eee; padding:4px 8px; border-radius:4px; font-size:0.85rem; font-weight:600;">${u.role.toUpperCase()}</span></td>
+                        <td style="padding:12px 15px;">${u.first_name}</td>
+                        <td style="padding:12px 15px;">${u.role}</td>
                         <td style="padding:12px 15px; text-align:right;">
-                            <button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'><i class="fas fa-edit"></i> Edit</button> 
-                            <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})"><i class="fas fa-trash-alt"></i> Delete</button>
+                            <button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'>Edit</button> 
+                            <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})">Delete</button>
                         </td>
                     </tr>`;
             });
         }
-        
         html += `</tbody></table>`;
         dom.adminContent.innerHTML = html;
     }
 
-    // --- ONLINE ACCOUNTS IMPLEMENTATION (DESIGN MATCH) ---
     function renderAccountsTable(users, title = "Online Accounts") {
         if (!Array.isArray(users)) users = [];
-
-        // Count based on DB status
         const onlineAdmins = users.filter(u => u.role === 'admin' && parseInt(u.status) === 1).length;
-        
-        // Preserve search query if re-rendering
         const searchInput = document.getElementById('user-search');
         const currentQuery = searchInput ? searchInput.value : '';
 
@@ -578,49 +539,35 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2 style="font-weight:bold; font-size:1.8rem;">${title}</h2>
             </div>
-            
             <div style="display:flex; align-items:center; gap:15px; margin-bottom:25px;">
                 <div style="background:white; padding:10px 20px; border-radius:8px; border-left:5px solid var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.05); font-weight:bold;">
                     Total Admins: ${onlineAdmins}
                 </div>
-                <input type="text" id="user-search" placeholder="Search accounts..." class="shop-input" style="width:300px; margin:0; border-radius:6px;" value="${currentQuery}" onkeyup="searchUsers()">
+                <input type="text" id="user-search" placeholder="Search accounts..." class="shop-input" style="width:300px; margin:0;" value="${currentQuery}" onkeyup="searchUsers()">
             </div>
-            
-            <table id="accounts-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden;">
+            <table id="accounts-table" style="width:100%;">
                 <thead>
-                    <tr style="background:#f9f9f9; border-bottom:1px solid #eee; color:#444;">
-                        <th style="padding:15px; text-align:left; font-weight:bold;">First Name</th>
-                        <th style="padding:15px; text-align:left; font-weight:bold;">Last Name</th>
-                        <th style="padding:15px; text-align:left; font-weight:bold;">Username</th>
-                        <th style="padding:15px; text-align:left; font-weight:bold;">Role</th>
-                        <th style="padding:15px; text-align:left; font-weight:bold;">Status</th>
+                    <tr style="background:#f9f9f9; border-bottom:1px solid #eee;">
+                        <th style="padding:15px;">First Name</th>
+                        <th style="padding:15px;">Username</th>
+                        <th style="padding:15px;">Role</th>
+                        <th style="padding:15px;">Status</th>
                     </tr>
                 </thead>
                 <tbody id="accounts-table-body">
         `;
 
-        // If search is active, filter the users list first
         let displayUsers = users;
         if (currentQuery) {
-            displayUsers = users.filter(u => 
-                u.username.toLowerCase().includes(currentQuery.toLowerCase()) ||
-                (u.first_name && u.first_name.toLowerCase().includes(currentQuery.toLowerCase())) ||
-                (u.last_name && u.last_name.toLowerCase().includes(currentQuery.toLowerCase())) ||
-                u.role.toLowerCase().includes(currentQuery.toLowerCase())
-            );
+            displayUsers = users.filter(u => u.username.toLowerCase().includes(currentQuery.toLowerCase()));
         }
 
         if (displayUsers.length === 0) {
-            uHtml += `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
+            uHtml += `<tr><td colspan="4" style="padding:20px; text-align:center;">No users found.</td></tr>`;
         } else {
             displayUsers.forEach(u => {
-                // Ensure u.status is treated as integer for comparison
                 let isOnline = parseInt(u.status) === 1;
-                
-                // Override status for current user ONLY if currentUser is actually set (i.e. logged in)
-                if(currentUser && u.username === currentUser.username) {
-                    isOnline = true;
-                }
+                if(currentUser && u.username === currentUser.username) isOnline = true;
 
                 const statusHtml = isOnline 
                     ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
@@ -628,10 +575,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 uHtml += `
                 <tr style="border-bottom:1px solid #f0f0f0;">
-                    <td style="padding:15px;">${u.first_name || '-'}</td>
-                    <td style="padding:15px;">${u.last_name || '-'}</td>
+                    <td style="padding:15px;">${u.first_name}</td>
                     <td style="padding:15px;">${u.username}</td>
-                    <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
+                    <td style="padding:15px;">${u.role}</td>
                     <td style="padding:15px;">${statusHtml}</td>
                 </tr>`;
             });
@@ -639,162 +585,72 @@ document.addEventListener('DOMContentLoaded', () => {
         uHtml += `</tbody></table>`;
         dom.adminContent.innerHTML = uHtml;
         
-        // Re-focus input if it exists (prevents losing focus on refresh)
         const newSearchInput = document.getElementById('user-search');
         if (newSearchInput && currentQuery) {
             newSearchInput.focus();
-            // Move cursor to end
-            const len = newSearchInput.value.length;
-            newSearchInput.setSelectionRange(len, len);
+            newSearchInput.setSelectionRange(currentQuery.length, currentQuery.length);
         }
     }
 
+    // Expose functions globally for HTML events
+    window.searchProducts = searchProducts;
+    window.renderManageProducts = renderManageProducts;
     window.searchUsers = () => {
         const query = document.getElementById('user-search').value.toLowerCase();
-        // Safety check if fullUserData is valid
         if (!Array.isArray(fullUserData)) return;
-
-        const filteredUsers = fullUserData.filter(u => 
-            u.username.toLowerCase().includes(query) ||
-            (u.first_name && u.first_name.toLowerCase().includes(query)) ||
-            (u.last_name && u.last_name.toLowerCase().includes(query)) ||
-            u.role.toLowerCase().includes(query)
-        );
+        const filteredUsers = fullUserData.filter(u => u.username.toLowerCase().includes(query));
         
-        // --- Determine which table to update (Manage Users vs Online Accounts) ---
         const manageTable = document.getElementById('user-list-body');
-        const onlineTable = document.getElementById('accounts-table-body'); // Updated ID target
+        const onlineTable = document.getElementById('accounts-table-body');
 
         if(manageTable) {
-            // Logic for Manage Users (Older simple table)
-            let html = '';
-            if(filteredUsers.length === 0) {
-                html = `<tr><td colspan="5" style="padding:20px; text-align:center; color:#777;">No users found.</td></tr>`;
-            } else {
-                filteredUsers.forEach(u => {
-                    html += `
-                    <tr style="border-bottom:1px solid #eee;">
-                        <td style="padding:12px 15px;">${u.username}</td>
-                        <td style="padding:12px 15px;">${u.first_name || '-'}</td>
-                        <td style="padding:12px 15px;">${u.last_name || '-'}</td>
-                        <td style="padding:12px 15px;"><span style="background:#eee; padding:4px 8px; border-radius:4px; font-size:0.85rem; font-weight:600;">${u.role.toUpperCase()}</span></td>
-                        <td style="padding:12px 15px; text-align:right;">
-                            <button class="btn btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u)})'><i class="fas fa-edit"></i> Edit</button> 
-                            <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})"><i class="fas fa-trash-alt"></i> Delete</button>
-                        </td>
-                    </tr>`;
-                });
-            }
-            manageTable.innerHTML = html;
-        } 
-        else if (onlineTable) {
-            // Logic for Online Accounts (New design)
-            const tbody = onlineTable;
-            if(tbody) {
-                let html = '';
-                if(filteredUsers.length === 0) {
-                    html = `<tr><td colspan="5" style="padding:20px; color:#777;">No users found.</td></tr>`;
-                } else {
-                    filteredUsers.forEach(u => {
-                        // Ensure u.status is treated as integer for comparison
-                        let isOnline = parseInt(u.status) === 1;
-                        
-                        // Override status for current user ONLY if currentUser is logged in
-                        if(currentUser && u.username === currentUser.username) {
-                            isOnline = true;
-                        }
-
-                        const statusHtml = isOnline 
-                            ? '<span style="color:var(--success); font-weight:bold;">Online</span>' 
-                            : '<span style="color:gray;">Offline</span>';
-
-                        html += `
-                        <tr style="border-bottom:1px solid #f0f0f0;">
-                            <td style="padding:15px;">${u.first_name || '-'}</td>
-                            <td style="padding:15px;">${u.last_name || '-'}</td>
-                            <td style="padding:15px;">${u.username}</td>
-                            <td style="padding:15px; text-transform:capitalize;">${u.role}</td>
-                            <td style="padding:15px;">${statusHtml}</td>
-                        </tr>`;
-                    });
-                }
-                tbody.innerHTML = html;
-            }
+            renderManageUsers(filteredUsers);
+        } else if (onlineTable) {
+             renderAccountsTable(filteredUsers, "Online Accounts");
         }
     };
 
-    // --- CATEGORY MODAL HANDLERS ---
+    // --- GLOBAL MODAL ACTIONS ---
     window.openCategoryModal = (id = null, name = "") => {
         if(!dom.categoryModal) return;
-        
-        const title = dom.categoryModal.querySelector('h3');
-        const input = document.getElementById('cat-name-input');
-        const saveBtn = document.getElementById('cat-save-btn');
-        
-        if(title) title.textContent = id ? "Edit Category" : "Add New Category";
-        if(input) input.value = name;
-        
-        saveBtn.onclick = async () => {
-            const newName = input.value.trim();
+        dom.categoryModal.style.display = 'flex';
+        document.getElementById('cat-name-input').value = name;
+        document.getElementById('cat-save-btn').onclick = async () => {
+            const newName = document.getElementById('cat-name-input').value.trim();
             if(!newName) return alert("Name required");
-            
-            if(id) {
-                await window.posSystem.updateCategory({ id, name: newName });
-            } else {
-                await window.posSystem.addCategory({ name: newName });
-            }
-            alert("Category Saved");
+            if(id) await window.posSystem.updateCategory({ id, name: newName });
+            else await window.posSystem.addCategory({ name: newName });
             dom.categoryModal.style.display = 'none';
             renderDashboardPage('manage_products');
         };
-        
-        dom.categoryModal.style.display = 'flex';
     };
 
-    window.deleteCategory = async (id) => {
-        if(confirm("Delete this category and ALL its products?")) {
-            await window.posSystem.deleteCategory({id});
-            renderDashboardPage('manage_products');
-        }
-    };
+    window.closeCategoryModal = () => { if(dom.categoryModal) dom.categoryModal.style.display = 'none'; };
 
-    // --- PRODUCT MODAL HANDLERS ---
     window.openProductModal = (product = null, catName = "") => {
         if(!dom.productModal) return;
-        
         const title = document.getElementById('prod-modal-title');
         const nameInput = document.getElementById('prod-name');
         const priceInput = document.getElementById('prod-price');
         const saveBtn = document.getElementById('prod-save-btn');
-        const hiddenCat = document.getElementById('prod-cat-hidden');
         
         if(title) title.textContent = product ? "Edit Product" : "Add Product to " + catName;
-        if(nameInput) nameInput.value = product ? product.name : "";
-        if(priceInput) priceInput.value = product ? product.price : "";
-        if(hiddenCat) hiddenCat.value = catName;
+        nameInput.value = product ? product.name : "";
+        priceInput.value = product ? product.price : "";
         
         saveBtn.onclick = async () => {
             const name = nameInput.value.trim();
             const price = priceInput.value;
-            
             if(!name || !price) return alert("Invalid inputs");
-            
-            if (product) {
-                await window.posSystem.updateProduct({ id: product.id, name, price });
-            } else {
-                await window.posSystem.addMenuItem({ category: catName, name, price });
-            }
-            alert("Product Saved");
+            if (product) await window.posSystem.updateProduct({ id: product.id, name, price });
+            else await window.posSystem.addMenuItem({ category: catName, name, price });
             dom.productModal.style.display = 'none';
             renderDashboardPage('manage_products');
         };
-        
         dom.productModal.style.display = 'flex';
     };
 
     window.closeProductModal = () => { if(dom.productModal) dom.productModal.style.display = 'none'; };
-    window.closeCategoryModal = () => { if(dom.categoryModal) dom.categoryModal.style.display = 'none'; };
-
     window.deleteProduct = async (id) => {
         if(confirm("Delete this product?")) {
             await window.posSystem.deleteProduct({id});
@@ -802,7 +658,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- USER MODAL HANDLERS ---
     window.openUserModal = () => { if(dom.userModal) dom.userModal.style.display = 'flex'; };
     window.closeUserModal = () => { if(dom.userModal) dom.userModal.style.display = 'none'; };
     
@@ -812,8 +667,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('user-fname').value = u.first_name;
         document.getElementById('user-lname').value = u.last_name;
         document.getElementById('user-role').value = u.role;
-        document.getElementById('user-pass').value = '';
-        
         document.getElementById('user-save-btn').onclick = async () => {
             const data = {
                 id: u.id,
@@ -828,32 +681,6 @@ document.addEventListener('DOMContentLoaded', () => {
             closeUserModal();
             renderDashboardPage('manage_users');
         };
-    };
-    
-    // Default Add User Handler
-    const defaultUserSave = async () => {
-        const data = {
-            username: document.getElementById('user-username').value,
-            password: document.getElementById('user-pass').value,
-            firstName: document.getElementById('user-fname').value,
-            lastName: document.getElementById('user-lname').value,
-            role: document.getElementById('user-role').value
-        };
-        await window.posSystem.addUser(data);
-        alert("User Saved");
-        closeUserModal();
-        renderDashboardPage('manage_users'); 
-    };
-    
-    // Bind Add User button to reset modal state
-    const oldOpenUserModal = window.openUserModal;
-    window.openUserModal = () => {
-        oldOpenUserModal();
-        document.getElementById('user-username').value = '';
-        document.getElementById('user-fname').value = '';
-        document.getElementById('user-lname').value = '';
-        document.getElementById('user-pass').value = '';
-        document.getElementById('user-save-btn').onclick = defaultUserSave;
     };
 
     window.delUser = async (id) => {

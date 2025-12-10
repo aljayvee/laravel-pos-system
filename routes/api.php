@@ -17,8 +17,9 @@ Route::get('/dashboard-stats', [PosController::class, 'getStats']);
 Route::get('/daily-sales', [PosController::class, 'getDailySales']);
 Route::post('/add-product', [PosController::class, 'addProduct']);
 
-// User Management (Renamed to avoid conflict)
-Route::get('/all-users', [PosController::class, 'getUsers']); // Changed from /users
+// User Management
+// FIX: Changed from '/all-users' to '/users' to match frontend fetch calls
+Route::get('/users', [PosController::class, 'getUsers']); 
 Route::post('/users/add', [PosController::class, 'addUser']);
 Route::post('/users/update', [PosController::class, 'updateUser']);
 Route::post('/users/delete', [PosController::class, 'deleteUser']);
