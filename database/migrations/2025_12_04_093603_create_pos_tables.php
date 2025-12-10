@@ -15,17 +15,18 @@ return new class extends Migration
         if (!Schema::hasTable('users')) {
             Schema::create('users', function (Blueprint $table) {
                 $table->id();
-                $table->string('username'); // Unique index usually recommended
+                $table->string('username')->unique(); // Ensure unique
                 $table->string('password_hash');
                 $table->string('first_name');
                 $table->string('last_name');
                 $table->string('role');
                 $table->integer('status')->default(0); // 0 = Offline, 1 = Online
+                $table->rememberToken(); // <--- Add this line
                 $table->timestamps();
             });
         }
 
-        // 2. Categories Table
+        // ... rest of the tables (categories, products, etc.) remain unchanged
         if (!Schema::hasTable('categories')) {
             Schema::create('categories', function (Blueprint $table) {
                 $table->id();
@@ -34,7 +35,6 @@ return new class extends Migration
             });
         }
 
-        // 3. Products Table
         if (!Schema::hasTable('products')) {
             Schema::create('products', function (Blueprint $table) {
                 $table->id();
@@ -45,7 +45,6 @@ return new class extends Migration
             });
         }
 
-        // 4. Transactions Table
         if (!Schema::hasTable('transactions')) {
             Schema::create('transactions', function (Blueprint $table) {
                 $table->id();
@@ -58,7 +57,6 @@ return new class extends Migration
             });
         }
 
-        // 5. Transaction Items Table
         if (!Schema::hasTable('transaction_items')) {
             Schema::create('transaction_items', function (Blueprint $table) {
                 $table->id();
@@ -70,7 +68,6 @@ return new class extends Migration
             });
         }
 
-        // 6. Audit Logs Table
         if (!Schema::hasTable('audit_logs')) {
             Schema::create('audit_logs', function (Blueprint $table) {
                 $table->id();
@@ -86,12 +83,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Be careful dropping 'users' if it was created by another migration
         Schema::dropIfExists('audit_logs');
         Schema::dropIfExists('transaction_items');
         Schema::dropIfExists('transactions');
         Schema::dropIfExists('products');
         Schema::dropIfExists('categories');
-        // Schema::dropIfExists('users'); // Optional: Comment out if you want to keep users from the main migration
+        Schema::dropIfExists('users'); 
     }
 };
