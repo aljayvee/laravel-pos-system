@@ -2,9 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\AuthController;
-// Import other controllers as you create them:
-// use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\AuthController; // Import the AuthController
 
 /*
 |--------------------------------------------------------------------------
@@ -12,16 +10,14 @@ use App\Http\Controllers\Api\AuthController;
 |--------------------------------------------------------------------------
 */
 
-// --- AUTH ---
+// Authentication Routes
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout']);
 
-// --- PROTECTED ROUTES ---
+// Protected Routes (Require Login)
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
-    
-    // Add your other routes (menu, orders, etc.) here later
-    // once you create their respective PHP Controllers.
+    // Add other routes here (menu, orders, etc.) later
 });
