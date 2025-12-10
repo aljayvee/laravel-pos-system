@@ -9,19 +9,19 @@ export function initAuth() {
         const msg = document.getElementById('login-msg');
 
         if (loginBtn) {
-            console.log("Login button found in DOM, attaching listener..."); // Log 1: Confirm element exists
+            console.log("Login button found in DOM, attaching listener..."); // Log 1
 
-            // Remove existing listener to prevent duplicates (if initAuth is called multiple times)
+            // Remove existing listener to prevent duplicates
             const newLoginBtn = loginBtn.cloneNode(true);
             loginBtn.parentNode.replaceChild(newLoginBtn, loginBtn);
 
             newLoginBtn.onclick = async () => {
-                console.log("Login button clicked!"); // Log 2: Confirm click event fires
+                console.log("Login button clicked!"); // Log 2
 
                 const username = usernameInput.value.trim();
                 const password = passwordInput.value.trim();
 
-                console.log(`Attempting login for user: ${username}`); // Log 3: Inspect input values
+                console.log(`Attempting login for user: ${username}`); // Log 3
 
                 // Basic Frontend Validation
                 if (!username || !password) {
@@ -43,19 +43,19 @@ export function initAuth() {
                     // Call API
                     console.log("Calling API...");
                     const response = await api.auth.login({ username, password });
-                    console.log("API Response received:", response); // Log 4: Inspect API response
+                    console.log("API Response received:", response); // Log 4
                     
                     if (response && response.user) {
-                        // Success: Save user and reload to trigger app.js router logic
+                        // Success: Save user and reload
                         console.log("Login successful, saving user and reloading...");
                         localStorage.setItem('pos_user', JSON.stringify(response.user));
                         window.location.reload();
                     } else {
-                        // Fail (API returned success: false or similar)
+                        // Fail
                         throw new Error(response.message || "Invalid credentials");
                     }
                 } catch (e) {
-                    console.error("Login failed:", e); // Log 5: Catch errors
+                    console.error("Login failed:", e); // Log 5
                     if(msg) { 
                         msg.textContent = e.message || "Invalid credentials or server error"; 
                         msg.style.display = 'block'; 
