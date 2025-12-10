@@ -11,72 +11,61 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        // 1. Validate Input
-        $request->validate([
-            'username' => 'required',
-            'password' => 'required',
-        ]);
+        try {
+            $request->validate([
+                'username' => 'required',
+                'password' => 'required',
+            ]);
 
-        // 2. Find the user
-        $user = User::where('username', $request->username)->first();
+            $user = User::where('username', $request->username)->first();
 
-        // 3. Check Credentials
-        if (!$user) {
-            return response()->json(['message' => 'User not found'], 401);
-        }
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'User not found'], 401);
+            }
 
-        // PASSWORD CHECK LOGIC
-        // Your UserSeeder used simple SHA256, but standard Laravel uses Bcrypt.
-        // We check both to support your seeded 'admin' account and new users.
-        $isValid = false;
+            // Verify Password (supports both Bcrypt and your Seeder's SHA256)
+            $isValid = false;
+            
+            // 1. Check standard Laravel Bcrypt
+            if (Hash::check($request->password, $user->password_hash)) {
+                $isValid = true;
+            } 
+            // 2. Check legacy/seeder SHA256
+            else if ($user->password_hash === hash('sha256', $request->password)) {
+                $isValid = true;
+                // Optional: Upgrade to Bcrypt automatically
+                $user->password_hash = Hash::make($request->password);
+                $user->save();
+            }
 
-        // Check 1: Standard Laravel Hash (Bcrypt)
-        if (Hash::check($request->password, $user->password_hash)) {
-            $isValid = true;
-        } 
-        // Check 2: Legacy/Seeder Hash (SHA256)
-        // Only strictly necessary if you are using the exact seeder provided in your uploads
-        else if ($user->password_hash === hash('sha256', $request->password)) {
-            $isValid = true;
-            // Optional: Rehash to Bcrypt for security update
-            $user->password_hash = Hash::make($request->password);
+            if (!$isValid) {
+                return response()->json(['success' => false, 'message' => 'Invalid password'], 401);
+            }
+
+            // Update status
+            $user->status = 1;
             $user->save();
+
+            return response()->json([
+                'success' => true,
+                'user' => $user
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
-
-        if (!$isValid) {
-            return response()->json(['message' => 'Invalid password'], 401);
-        }
-
-        // 4. Login Success: Update Status to Online (1)
-        $user->status = 1;
-        $user->save();
-
-        // 5. Return User Data (Excluded sensitive fields)
-        return response()->json([
-            'success' => true,
-            'user' => [
-                'id' => $user->id,
-                'username' => $user->username,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'role' => $user->role,
-                'status' => $user->status
-            ]
-        ]);
     }
 
     public function logout(Request $request)
     {
         $id = $request->input('id');
-        
         if ($id) {
             $user = User::find($id);
             if ($user) {
-                $user->status = 0; // Set status to Offline
+                $user->status = 0;
                 $user->save();
             }
         }
-
-        return response()->json(['success' => true, 'message' => 'Logged out']);
+        return response()->json(['success' => true]);
     }
 }
