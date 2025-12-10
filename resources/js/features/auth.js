@@ -52,7 +52,9 @@ export function initAuth() {
                         window.location.reload();
                     } else {
                         // Fail
-                        throw new Error(response.message || "Invalid credentials");
+                        // FIX: Check if response exists before accessing .message
+                        const errorText = (response && response.message) ? response.message : "Server Error (Check Database)";
+                        throw new Error(errorText);
                     }
                 } catch (e) {
                     console.error("Login failed:", e); // Log 5
