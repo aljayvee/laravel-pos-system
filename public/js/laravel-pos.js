@@ -438,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } catch (e) {
-            console.error(e);
+            //console.error(e);
             dom.adminContent.innerHTML = '<p>Error loading content</p>';
         }
     }
